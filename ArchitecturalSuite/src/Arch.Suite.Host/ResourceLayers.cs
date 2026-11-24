@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
@@ -37,6 +37,29 @@ namespace Arch.Suite.Host
             public bool Draft {get;set;}
             public JObject Values {get;set;}
         }
+        private static string AppRoot()
+        {
+            var file=Path.Combine(Path.GetDirectoryName(typeof(AICad.Bridge.Plugin).Assembly.Location),"..","install.json");
+            if(!File.Exists(file))throw new InvalidOperationException("Mở Architectural Suite qua Manager để đọc kho.");
+            var root=JObject.Parse(File.ReadAllText(file)).ToObject<InstallConfig>().ContentRoot;
+            if(string.IsNullOrWhiteSpace(root))throw new InvalidOperationException("Manager chưa cấu hình kho.");
+            return root;
+        }
+        internal static string PendingStatus(string root)
+        {
+            var journal=Path.Combine(root,"Catalog","qa-transactions","ISO_QUANGANH.pending.json");
+            if(File.Exists(journal))
+            {
+                var item=JObject.Parse(File.ReadAllText(journal));
+                return "QA có thao tác chờ: "+(string)item["operation"]+" · "+(string)item["phase"]+". DWG nguồn và nội dung chờ cần được QA đối chiếu.";
+            }
+            if(File.Exists(Path.Combine(root,"Catalog","sync","pending.json")))return "Kho còn phiên đồng bộ danh mục chưa hoàn tất.";
+            return null;
+        }
+        internal static string CurrentStatus()
+        {
+            return PendingStatus(WarehousePaths.Resolve(AppRoot()))??"Kho không có giao dịch chờ. Có thể chọn tài nguyên đã công bố.";
+        }
         internal static string Appearance(Transaction tx,LayerTableRecord layer)
         {
             var lt=(LinetypeTableRecord)tx.GetObject(layer.LinetypeObjectId,OpenMode.ForRead);
@@ -53,15 +76,16 @@ namespace Arch.Suite.Host
         }
         internal static void Configure(Document doc,Transaction tx,Model model)
         {
-            var appRoot=JObject.Parse(File.ReadAllText(Path.Combine(Path.GetDirectoryName(typeof(AICad.Bridge.Plugin).Assembly.Location),"..","install.json"))).ToObject<InstallConfig>().ContentRoot;
-            if(appRoot==null)throw new InvalidOperationException("Mở Architectural Suite qua Manager để đọc kho.");
-            var resources=ReadOptions(appRoot);
+            var appRoot=AppRoot();
+            var pending=PendingStatus(WarehousePaths.Resolve(appRoot));
+            var resources=ReadOptions(appRoot,true);
             var options=resources.Where(r=>r.Kind=="layers").ToList();
             var wall=new ComboBox{ItemsSource=options,IsTextSearchEnabled=true,MinWidth=300};
             var door=new ComboBox{ItemsSource=options,IsTextSearchEnabled=true};
             wall.SelectedItem=options.FirstOrDefault(o=>o.Id==model.WallLayer?.Id);
             door.SelectedItem=options.FirstOrDefault(o=>o.Id==model.DoorLayer?.Id);
             var panel=new StackPanel{Margin=new Thickness(12)};
+            if(pending!=null)panel.Children.Add(new TextBlock{Text=pending+"\nĐang xem bản công bố trước. Hoàn tất đồng bộ trong QA trước khi áp dụng.",TextWrapping=TextWrapping.Wrap,MaxWidth=460,Margin=new Thickness(0,0,0,8)});
             panel.Children.Add(new TextBlock{Text="Nét tường và đường chuẩn"});panel.Children.Add(wall);
             panel.Children.Add(new TextBlock{Text="Ký hiệu định vị cửa",Margin=new Thickness(0,8,0,0)});panel.Children.Add(door);
             var additional=new Dictionary<string,ComboBox>();
@@ -75,15 +99,18 @@ namespace Arch.Suite.Host
             }
             var win=new Window{Title="Tài nguyên từ kho · ISO_QUANGANH",Content=panel,SizeToContent=SizeToContent.WidthAndHeight,WindowStartupLocation=WindowStartupLocation.CenterOwner,ResizeMode=ResizeMode.NoResize};
             var ok=new Button{Content="Áp dụng bộ layer",Margin=new Thickness(0,10,0,0),IsDefault=true,MinHeight=28};
+            ok.IsEnabled=pending==null;
             ok.Click+=(s,e)=>{if(wall.SelectedItem!=null && door.SelectedItem!=null)win.DialogResult=true;};panel.Children.Add(ok);
+            Host.ApplyTheme(win);
             if(App.ShowModalWindow(win)!=true)return;
             ApplyResources(doc,tx,model,appRoot,(LayerRole)wall.SelectedItem,(LayerRole)door.SelectedItem,
                 additional.ToDictionary(i=>i.Key,i=>i.Value.SelectedItem as LayerRole));
         }
-        internal static List<LayerRole> ReadOptions(string appRoot)
+        internal static List<LayerRole> ReadOptions(string appRoot,bool allowPendingRead=false)
         {
             var root=WarehousePaths.Resolve(appRoot);
-            if(File.Exists(Path.Combine(root,"Catalog","sync","pending.json")))throw new InvalidOperationException("Kho đang đồng bộ.");
+            var pending=PendingStatus(root);
+            if(pending!=null && !allowPendingRead)throw new InvalidOperationException(pending+" Hoàn tất đồng bộ trong QA trước khi áp dụng.");
             var state=JObject.Parse(File.ReadAllText(Path.Combine(root,"Catalog","sync","state.json")))["Items"].ToObject<List<ResourceItem>>();
             var codes=new LibraryResourceCodes(appRoot).Read().Items;
             return (from code in codes where code.SourceId=="ISO_QUANGANH"
@@ -93,6 +120,8 @@ namespace Arch.Suite.Host
         internal static void ApplyResources(Document doc,Transaction tx,Model model,string appRoot,LayerRole wall,LayerRole door,Dictionary<string,LayerRole> additional)
         {
             var root=WarehousePaths.Resolve(appRoot);
+            var pending=PendingStatus(root);
+            if(pending!=null)throw new InvalidOperationException(pending+" Chưa thể áp dụng tài nguyên.");
             var folder=Path.Combine(root,"Styles","ISO_QUANGANH");
             var active=JObject.Parse(File.ReadAllText(Path.Combine(folder,"active.json")));
             var version=ContentStore.VersionName((string)active["version"]);var catalog=Path.Combine(folder,version,"catalog.json");

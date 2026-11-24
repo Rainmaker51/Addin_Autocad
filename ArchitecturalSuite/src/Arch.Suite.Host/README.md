@@ -1,3 +1,63 @@
+﻿# Architectural Suite 0.4.0 — Profile khung và định nghĩa tường / cửa
+
+Bản cập nhật quản lý khung, đăng ký vùng tường và bộ cửa dynamic. AutoCAD 2021 x64, .NET Framework 4.8. CAD Tool Manager giữ một nút QAARCHOPEN và Palette GUID hiện có.
+
+## Luồng mới
+
+1. Mở Model của DWG làm việc, mở Architectural Suite từ Manager.
+2. Chọn **Chọn khung mẫu**, chỉ một block khung trực tiếp trong Model.
+3. Trong bảng trái, nhập tầng, chọn tag tên bản vẽ và layer biên. Block cần có đúng một polyline kín cạnh thẳng trên layer đó. Chấp nhận khung quay và scale đều dương trên mặt phẳng XY.
+4. Tab **Setup ATT** bên phải cho chọn các tag làm cột, đặt tên cột và dùng **Đưa cột lên/xuống** trong nhóm Danh mục bản vẽ bên trái. Tên cột phải riêng biệt và khác cột Tầng có sẵn.
+5. **Kiểm tra biên** hoặc **Quét trong khung** để xem trước. Các thao tác này chỉ đọc. Layer vùng tường nhập ở bảng trái, mặc định QA_KT_Tuong. Quét liệt kê thực thể trực tiếp trong Model, tách các nét trong định nghĩa block khỏi vùng tường.
+6. Danh sách có handle, layer, trạng thái và lý do. Polyline tường hở, vùng cần duyệt và bao hình chạm/cắt biên được báo. Chọn dòng, bấm **Đi tới mục đang chọn** để định vị trong CAD. Double-click dòng cũng định vị.
+7. **Lưu khung / setup** ghi cấu hình vào DWG. Nhấn Save trong AutoCAD trước khi đóng hoặc gửi file.
+8. Có thể chọn và lưu thêm khung. Tab **Danh mục** đọc các cột theo thứ tự đã lưu. **Xuất danh mục CSV** xuất cấu hình đã lưu, giữ nguyên file nếu tên đã tồn tại.
+9. Preview hiện biên xanh, hình hiện trạng cam và đối tượng cắt biên vàng. Lăn chuột zoom tại con trỏ, giữ chuột giữa để pan và bấm **Vừa khung** để đặt lại góc nhìn.
+
+Bảng trái mặc định 220 DIP, co được đến 200 DIP và kéo rộng khi cần. Chiều rộng được lưu riêng trên máy. Hàng dữ liệu 27 DIP, ô nhập/nút thông thường khoảng 28 DIP. Preview chiếm phần lớn vùng phải; bảng kết quả phía dưới có thanh cuộn.
+
+## Quét chọn nhiều khung
+
+Chọn khung mẫu, nhập tầng, tag tên, layer biên và setup ATT; bấm **Lưu profile khung** hoặc **Lưu khung / setup**. **Quét chọn khung** cho quét vùng/chọn nhiều block trực tiếp trong Model. App giữ các block cùng tên gốc của mẫu, kiểm tra từng khung và hiện bản nháp. Sửa tầng từng dòng; hoặc chọn một dòng, nhập tầng bên trái rồi **Áp tầng cho tập quét**. Bấm **Lưu các khung hợp lệ**. Khung lỗi được giữ riêng để sửa; đăng ký lại khung cũ giữ ID. Mỗi DWG lưu một profile đang dùng; các khung đã đăng ký giữ setup riêng.
+
+## Duyệt định nghĩa tường và cửa
+
+1. Trong **Định nghĩa tường / cửa**, kiểm tra layer vùng tường bên trái và chiều cao mm. Giá trị ban đầu 3300 chỉ là gợi ý; phải bấm **Lưu định nghĩa** ở footer để xác nhận trước khi đăng ký.
+2. **Chọn block cửa mẫu trên CAD**. Chọn property chiều rộng đang thể hiện rộng bộ cửa; app chỉ đưa property kiểu khoảng cách có giá trị dương vào danh sách. Chọn đúng tên dù block có nhiều khoảng cách.
+3. Chiều cao lấy từ đúng một nguồn: dynamic property khoảng cách; hoặc tag ATT số mm; hoặc chiều cao mm theo loại block. Nếu dùng property thì để ATT trống. Chọn tag mã cửa nếu có.
+4. **Lưu định nghĩa** ghi tường và loại cửa đang chọn trong DWG. Bảng bên dưới liệt kê các loại đã lưu. Chọn lại một block mẫu cùng loại để đọc/sửa cấu hình đã lưu.
+5. Quay lại **Phạm vi / đối tượng**, chọn khung đã lưu, bấm **Đăng ký tường hợp lệ** và **Đăng ký cửa đã định nghĩa**. Chỉ quét thực thể trực tiếp trong Model nằm trọn khung. Nét bên trong block cửa không đăng ký thành tường. Đường hở/cắt biên báo lý do để xử lý.
+6. Tab **Đã đăng ký** chứa ID liên kết với handle/khung, chiều cao, rộng bộ cửa, diện tích vùng tường theo mm² và trạng thái. Diện tích vùng là diện tích mặt bằng, chưa phải diện tích xây hay khối lượng. Có định vị CAD và gỡ đăng ký giữ hình.
+7. Save DWG trước khi đóng/chuyển máy. Khi hình hoặc định nghĩa thay đổi, đăng ký lại để cập nhật số liệu và giữ ID. Chưa tự cập nhật số liệu đăng ký theo chỉnh sửa CAD; không dùng bảng này làm khối lượng nghiệm thu.
+
+Tường được nhận bằng Polyline kín cạnh thẳng trên layer cấu hình, giữ đủ tọa độ biên gốc; chiều cao hiện áp dụng chung cho lần đăng ký. Chưa hỗ trợ lỗ trong vùng, biên cong hay gán chiều cao riêng từng đoạn. Cửa cần block dynamic trên XY, scale đều trong mặt bằng; kích thước property quy đổi theo INSUNITS mm/cm/m và scale block. ATT cao/bảng loại dùng mm. Chưa khai báo neo, flip, bậu và kích thước ô chờ trong bản này.
+
+## Thư viện khi có giao dịch chờ
+
+Tab Thư viện hiển thị loại thao tác QA và phase; **Đọc trạng thái kho** cập nhật thông tin. Bộ chọn vẫn mở bản tài nguyên đã công bố để xem, nhưng vô hiệu hóa Áp dụng khi có giao dịch chờ và kiểm tra lại ngay trước khi ghi. Architectural Suite không tự xóa journal hoặc xác nhận kết quả QA.
+
+Lỗi **DWG đã lưu chưa đúng nội dung thao tác chờ** vẫn cần được xử lý trong QA bằng đối chiếu DWG nguồn và giao dịch gộp hatch. Bản 0.4.0 sửa phản hồi/bộ chọn phía Arch, chưa thay thuật toán khôi phục đồng bộ của QA.
+
+## Lưu và chuyển DWG
+
+Khung, tầng, ATT/cột, profile, định nghĩa tường/cửa và danh sách đăng ký nằm trong Xrecord ARCH_SUITE_FRAMES_V1 của DWG. Mô hình 0.2 vẫn nằm ở ARCH_SUITE_V1 và được giữ nguyên. Mở toàn bộ DWG đã Save trên phiên/máy có Suite tương thích sẽ đọc lại dữ liệu. Bộ tài nguyên đã áp dụng theo luồng 0.2 cũng lưu trong DWG; kho của máy nhận phải có tài nguyên phù hợp nếu tạo/cập nhật nội dung cần thư viện. Copy một phần bằng WBLOCK/COPYCLIP cần ánh xạ riêng ở bước sau.
+
+## Phạm vi bản này và bước tiếp
+
+Bản này bổ sung profile khung và đăng ký vùng tường/cửa theo khung. Chưa có quan hệ ô chờ, chia vùng tường nhiều nhánh thành đoạn, tự ngắt/nối tường, khối lượng trừ ô chờ hoặc sinh/đồng bộ các khung đích từ mô hình mới. Các chức năng 0.2 vẫn dùng mô hình cũ riêng.
+
+Quét theo bao hình là phương án thận trọng: đối tượng quay hoặc nét cong sát biên có thể được đưa vào danh sách xác nhận. Preview vẽ nét thẳng đúng tọa độ; các hình cong/block khác dùng bao hình để định vị. Chưa phân loại trục/cos tự động khi chưa có quy tắc.
+
+Tab **Thư viện** hiển thị các tài nguyên đã lưu và mở bộ chọn 0.2 với theme thống nhất. Profile khung lưu trong DWG; cấu hình mặc định dùng chung theo Manager ID chưa mở rộng trong đợt này. Không tự thay lựa chọn của DWG bằng mặc định máy/kho.
+
+Nhóm **Công cụ dữ liệu 0.2** thu gọn giữ các thao tác đang có cho mô hình cũ. Các chức năng đó vẫn dùng vùng nguồn và đăng ký hai Line riêng. Kết quả quét khung mới chưa nhập vào mô hình này.
+
+## Nạp bản cập nhật
+
+Dùng Cập nhật file trên đúng mục Architectural Suite trong Manager, chọn Arch.Suite.Host.dll của gói đã bàn giao rồi mở lại AutoCAD khi Manager yêu cầu. Giữ nguyên tool ID, lệnh QAARCHOPEN và Palette GUID. Bản ứng viên chưa được chọn trong catalog cho đến khi thực hiện cập nhật qua Manager.
+
+## Hướng dẫn luồng 0.2 giữ tương thích
+
 # Architectural Suite 0.2.0
 
 Add-in cho AutoCAD 2021 x64, .NET Framework 4.8. CAD Tool Manager ghim `QAARCHOPEN` để mở bảng. Các thao tác từ Palette chạy trong ngữ cảnh lệnh AutoCAD của tài liệu đang chọn.
