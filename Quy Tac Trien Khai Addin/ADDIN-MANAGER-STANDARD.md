@@ -1,6 +1,6 @@
 # Tiêu chuẩn add-in dùng với CAD Tool Manager
 
-Phiên bản tài liệu: 1.3. Ngày cập nhật: 20/11/2026.
+Phiên bản tài liệu: 1.5. Ngày cập nhật: 24/11/2026.
 
 ## 1. Mục đích và phạm vi
 
@@ -19,6 +19,10 @@ Trong dự án AI-CAD-MCP, đọc thêm `docs/ADDIN-DEVELOPMENT-WORKFLOW.md` đ�
 | CAD Tool Manager | Nhập và kiểm tra gói, quản lý phiên bản đang chọn, bật/tắt add-in, tạo nút Ribbon, quản lý tab/nhóm và điều phối lệnh |
 | Add-in | Cung cấp một lệnh mở bảng chính, bảng điều khiển riêng, các chức năng nghiệp vụ và vòng đời tài nguyên |
 | Người dùng | Chọn tab/nhóm đặt nút, dùng các chức năng trong bảng và quyết định cập nhật phiên bản |
+
+### Tài nguyên từ kho và cấu hình nghiệp vụ
+
+Thư viện QA quản lý tài nguyên gốc, không duyệt quyền sử dụng và không yêu cầu Role. Từng add-in chọn block/layer/dim/hatch theo ID ổn định, lưu cấu hình riêng ở `Catalog/addin-settings/<tool-id>.json` và tự kiểm tra yêu cầu nghiệp vụ như tag ATT, visibility, tham số động, phạm vi giá trị. Không ghi đè Usage/template chung để cấu hình cho riêng một công cụ. Dùng các DLL đang có; không phát sinh dịch vụ nền để đọc kho hoặc kiểm tra lựa chọn. Xem `QA-RESOURCE-WORKFLOW.md`.
 
 Add-in không tự tạo tab, panel hay nút Ribbon, không tự đăng ký nạp bằng Registry, Startup Suite hoặc cơ chế khác song song với Manager. Gói cài thông thường được nhập qua Manager; chính CAD Tool Manager là bộ lõi có trình cài riêng.
 
@@ -42,6 +46,16 @@ Ví dụ: add-in **Kiến trúc** có một nút **Kiến trúc** trên Ribbon. 
 - Kiểm tra giá trị trước khi chạy; thông báo lỗi phải nêu cách khắc phục. Khi đang xử lý, hiển thị trạng thái và ngăn thao tác lặp gây trùng đối tượng.
 - Đóng hoặc ẩn bảng không làm mất dữ liệu đã lưu. Quy định rõ thông số nào chỉ giữ trong phiên, thông số nào lưu lâu dài.
 - Nếu chưa mở DWG phù hợp, giải thích điều kiện cần và không chạy thao tác chỉnh sửa.
+
+### 4.1. Giao diện chuẩn theo Axis
+
+**Add-in tạo mới phải có giao diện cùng phong cách Axis, không chỉ cùng màu.** Đọc và tuân thủ [ADDIN-UI-STANDARD.md](ADDIN-UI-STANDARD.md): bảng màu dark, font, tab, ô nhập/chọn, nút, nhóm thu gọn, mật độ bố cục, vùng preview và trạng thái tương tác. Axis là mẫu giao diện tham chiếu; nội dung nghiệp vụ vẫn theo từng add-in.
+
+- Tái sử dụng theme `src/CAD.Bridge.AutoCAD/CadToolTheme.xaml` và đối chiếu các mẫu điều khiển của Axis; không chỉ đổi màu nền rồi để các control trắng mặc định.
+- Nếu công cụ có preview, thông số ở trái, preview ở phải, có thanh chia và nhớ tỷ lệ kéo theo máy. Mặc định 30/70 khi chưa có thiết lập; áp dụng chiều rộng tối thiểu phù hợp màn hình. Công cụ không cần preview dùng bố cục thông số/danh sách/chi tiết cùng phong cách, không tạo preview rỗng.
+- Các tab mặc định là Thông số và Thư viện khi công cụ có lựa chọn tài nguyên kho; các thao tác nằm trong bảng, giữ một nút Ribbon mở bảng.
+- Khi làm ở dự án khác, mang theo cả tài liệu giao diện và tài nguyên theme cần dùng. Việc tái sử dụng resource không thay yêu cầu kiểm tra tương thích Manager; không tự chép DLL của dự án khác vào gói.
+- Chuẩn này áp dụng cho add-in mới. Chỉ chuyển giao diện các add-in đã có khi được yêu cầu riêng.
 
 ## 5. Lệnh và giao tiếp với Manager
 
@@ -119,13 +133,13 @@ Mục tiêu hiện tại: **AutoCAD 2021, .NET Framework 4.8, x64**. Khi hỗ tr
 
 Mã ngắn `BLK-`, `LAY-`, `DIM-`, `TXT-`, `HAT-` gắn với ID đồng bộ ổn định, lưu riêng trong `Catalog/resource-codes.json`. Đổi tên/chuyển nhóm không đổi mã nếu vẫn là cùng ID. Xem `docs/RESOURCE-IDENTIFIERS.md` để biết cấu trúc đã triển khai, giới hạn ánh xạ block nguồn/biến thể và cách tích hợp. Các phần hợp đồng chọn tài nguyên của add-in/skill dưới đây vẫn là yêu cầu cho bước tích hợp sau, chưa tự áp dụng vào add-in đang cài.
 
-Phần này là yêu cầu thiết kế và nghiệm thu cần triển khai. Tại thời điểm cập nhật tài liệu, kho và Manager chưa có đầy đủ cơ chế cấu hình, phân giải và kiểm tra liên kết mô tả dưới đây. Trước khi viết add-in, phải đối chiếu khả năng tích hợp thực tế và nêu phần cần bổ sung; không tự giả định API hoặc định dạng cấu hình đã tồn tại. Chỉ cập nhật tài liệu chưa làm Tạo trục hay add-in hiện có tự đổi tài nguyên.
+**Bắt buộc đọc [LIBRARY-CONSUMER-STANDARD.md](LIBRARY-CONSUMER-STANDARD.md)** khi viết add-in mới có dùng kho. Tài liệu đó quy định quyền chỉnh sửa của QA, cấu hình để kiểm tra xóa/gộp, cách nạp lại lựa chọn và xử lý giao dịch thư viện chưa hoàn tất. QA 1.8.1 đã có kiểm tra/chuyển một số liên kết thực tế; các yêu cầu tổng quát về vai trò, phiên bản và API chung bên dưới không vì vậy trở thành tính năng Manager đã hỗ trợ. Phải đối chiếu bảng hiện trạng trong tài liệu dùng kho và nêu phần từng add-in còn phải triển khai. Không tự chuyển đổi add-in cũ khi chỉ cập nhật tiêu chuẩn.
 
 ### 8.2. Khai báo vai trò và chọn tài nguyên
 
 - Add-in/skill khai báo các vai trò cần dùng, loại tài nguyên tương ứng, vai trò bắt buộc/tùy chọn và các tùy chỉnh được phép. Không phải công cụ nào cũng cần đủ cả năm loại tài nguyên.
 - Phân biệt khai báo nhu cầu (ví dụ cần một dim style cho dim nhịp) với lựa chọn cụ thể (vai trò đó được gán mã `DIM-0001`). Người dùng gán và thay đổi lựa chọn trong chính add-in/skill.
-- Lựa chọn chỉ được đưa vào bản tổng hợp khi đã lưu. Bản nháp chỉnh sửa trong bảng không thay thế cấu hình đang có hiệu lực trước khi lưu thành công.
+- Chỉ lựa chọn đã lưu được coi là cấu hình sử dụng có hiệu lực để kiểm tra phụ thuộc. Bản nháp chỉnh sửa trong bảng không thay thế cấu hình đang có hiệu lực trước khi lưu thành công.
 - Khi có gợi ý mặc định, add-in/skill phải phân giải và hiển thị tài nguyên cụ thể trước khi lưu lựa chọn. Không tự thêm một trang chọn mặc định chung trong tab tổng quan của thư viện.
 - Nếu một liên kết đã cấu hình bị hỏng hoặc thiếu tài nguyên, phải báo lỗi; không âm thầm rơi về tài nguyên khác. Vai trò chưa gán phải ghi rõ “Chưa chọn”, không coi như đang sử dụng tài nguyên mặc định.
 - Lưu liên kết bằng định danh tài nguyên ổn định, định danh nguồn, loại tài nguyên và chính sách phiên bản. Không dùng tên hiển thị, tên nhóm hoặc vị trí trình bày làm khóa duy nhất. Chuyển nhóm không làm mất liên kết.
@@ -169,14 +183,24 @@ Tên layer hoặc block trong ví dụ triển khai chỉ là giá trị đượ
 - Lựa chọn được lưu theo hợp đồng dữ liệu dùng chung, có phiên bản cấu trúc. Thông tin tối thiểu gồm: loại công cụ (`addin`/`skill`), ID công cụ, ID cấu hình nếu có nhiều cấu hình, mã vai trò, loại thư viện, mã tài nguyên, định danh nguồn, chính sách phiên bản và revision của cấu hình.
 - Kho giữ bản liên kết đã lưu để app đọc được khi bảng add-in đã đóng hoặc DLL chưa được nạp. Add-in/skill là nơi cập nhật lựa chọn qua giao tiếp chung; không ghi tùy ý vào catalog nội bộ hoặc duy trì hai bản cấu hình có thể mâu thuẫn.
 - Khi lưu, kiểm tra đúng loại tài nguyên, sự tồn tại và revision để tránh ghi đè thay đổi từ máy khác. Khi công cụ chưa hỗ trợ hợp đồng này, hiển thị “Chưa cung cấp thông tin”, không suy luận rằng công cụ không dùng kho.
-- Tên API, định dạng file và nơi lưu cụ thể phải được thống nhất khi triển khai. Các trường tối thiểu ở đây là yêu cầu thiết kế, không phải schema mà Manager hiện tại đã hỗ trợ.
+- Với cấu hình JSON add-in đã được QA nhận diện, dùng vị trí và giới hạn thực tế trong [quy định dùng kho](LIBRARY-CONSUMER-STANDARD.md). API đăng ký vai trò/phiên bản tổng quát và các trường hợp ngoài phạm vi đó phải được thống nhất khi triển khai; các trường tối thiểu ở đây không phải schema Manager tự thực thi.
 
-### 8.6. Phạm vi hiện tại: chỉ định danh tài nguyên
+### 8.6. Phạm vi quản lý liên kết, không thêm tab tổng hợp
 
 - Không triển khai danh sách công cụ đang dùng kho, tra cứu ngược “Được sử dụng bởi” hoặc thống kê lịch sử thực thi trong đợt này.
 - Mã hiển thị trong danh sách và hồ sơ của từng loại tài nguyên, có thể sao chép để tham chiếu. Tài nguyên chưa khớp ID đồng bộ hiện “Mã chờ đồng bộ”, không được cấp mã chỉ dựa vào tên.
 - Sổ mã phải dùng chung giữa hai máy, giữ các số đã cấp, không tự đánh lại mã khi tên/nhóm hoặc hash nội dung thay đổi. Không đưa sổ mã vào danh sách tệp cũ có thể xóa.
-- Việc bổ sung bộ chọn và hợp đồng liên kết trong add-in/skill là công việc riêng; chỉ cấp mã chưa làm thay đổi dim/layer/block mà add-in hiện tại đang sử dụng.
+- QA đã có kiểm tra phụ thuộc và chuyển ID hatch trong phạm vi được mô tả ở [quy định dùng kho](LIBRARY-CONSUMER-STANDARD.md). Add-in mới phải triển khai bộ chọn, lưu/đọc lại liên kết và kiểm tra nguồn chưa hoàn tất cập nhật; các add-in/skill cũ cần được đánh giá riêng, không tự có cơ chế này chỉ vì được cấp mã.
+
+### 8.7. Quyền chỉnh sửa và vòng đời tài nguyên theo QA
+
+- QA quản lý DWG nguồn, danh mục và nhóm; add-in tiêu thụ ghi lựa chọn của nó và triển khai vào DWG công trình, không sửa kho chung hoặc journal QA.
+- Lưu lựa chọn theo `SourceId + Kind + Id`. Cấu hình JSON của add-in mới đặt tại `Catalog/addin-settings/<ManagerToolId>.json`, chứa các ID hiện hành dưới dạng chuỗi để QA nhận diện; không chứa lịch sử/cache lựa chọn cũ. Đây là nơi QA hiện kiểm tra, không phải API Manager tự lưu nghiệp vụ.
+- Lần mở bảng/lần triển khai tiếp theo phải nạp lại lựa chọn và thông số kho. Gộp hatch có thể chuyển ID nguồn sang ID đích trong file cấu hình; không ghi đè lại bằng ID nguồn từ bộ nhớ. Không tự thay tài nguyên khi liên kết thiếu/sai loại.
+- Không tự dựng lại mẫu nguồn đã xóa. Định nghĩa còn trong DWG, mã còn trong sổ hoặc ảnh còn trong cache không chứng minh tài nguyên còn được phép dùng.
+- Kiểm tra phiên bản/hash và trạng thái chưa hoàn tất cập nhật. Không tự sửa journal; chính sách chặn hoặc dùng bản xuất trước đã xác minh phải rõ ràng theo quy định dùng kho.
+- Giữ đúng cấu hình hatch, màu và scale; giữ tên/thông số Dim/Text/Layer/Block đã chọn, xử lý tỷ lệ đúng. Đổi thư viện áp dụng ở lần triển khai sau, không tự sửa đối tượng công trình đã vẽ.
+- Phụ thuộc skill và cấu hình ngoài các vị trí được QA hỗ trợ phải được đánh giá/triển khai adapter riêng; không cam kết phát hiện hoặc viết lại mọi skill.
 
 ## 9. Hồ sơ cần bàn giao
 
@@ -211,12 +235,13 @@ Trong AI-CAD-MCP, đặt gói đúng cấu trúc `_Development/<TênAddin>/versi
 - [ ] Tắt add-in không để lại sự kiện hoặc UI hoạt động ngoài ý muốn.
 - [ ] Kiểm thử trên AutoCAD 2021 thực tế với DWG thử, không dùng bản vẽ công trình thật làm fixture.
 - [ ] Bàn giao đủ nguồn, version, hash, hướng dẫn và bằng chứng kiểm thử; ghi rõ phần chưa kiểm tra.
+- [ ] Giao diện add-in mới đã đối chiếu với Axis và `ADDIN-UI-STANDARD.md`, gồm cả control, bố cục, trạng thái và khả năng co kéo.
 
 Kiểm thử Core Console có thể xác minh logic và thao tác Database. Bảng WPF, nút Ribbon, focus và thao tác modeless cần kiểm tra thêm trong GUI AutoCAD; không báo kiểm thử GUI đạt chỉ từ kết quả Core Console.
 
 ## 11. Dùng tài liệu trong cuộc trò chuyện hoặc dự án khác
 
-Sao chép file này vào `docs/ADDIN-MANAGER-STANDARD.md` của dự án mới hoặc đính kèm vào cuộc trò chuyện. Nếu dùng `AGENTS.md`, thêm đoạn sau vào file hiện có, giữ nguyên các quy tắc khác của dự án:
+Sao chép file này vào `docs/ADDIN-MANAGER-STANDARD.md` của dự án mới hoặc đính kèm vào cuộc trò chuyện. Mang theo `ADDIN-UI-STANDARD.md` và theme XAML tham chiếu để dự án nhận áp dụng được giao diện Axis. Nếu công cụ dùng kho, mang thêm `LIBRARY-CONSUMER-STANDARD.md`, `RESOURCE-IDENTIFIERS.md` và adapter/source tham chiếu cần thiết. Nếu dùng `AGENTS.md`, thêm đoạn sau vào file hiện có, giữ nguyên các quy tắc khác của dự án:
 
 ```markdown
 ## Add-in AutoCAD dùng với CAD Tool Manager
@@ -225,11 +250,15 @@ Trước khi thiết kế, phát triển, sửa lỗi, build hoặc bàn giao ad
 `docs/ADDIN-MANAGER-STANDARD.md`.
 Mỗi add-in mới phải có bảng điều khiển riêng và đúng một nút Ribbon mở bảng đó.
 Manager quản lý tab/nhóm/nút; add-in không tự tạo Ribbon hoặc tự đăng ký nạp riêng.
+Giao diện add-in mới phải theo Axis, cả màu sắc, bố cục, control và tương tác;
+đọc docs/ADDIN-UI-STANDARD.md và tái sử dụng theme được chỉ rõ trong tài liệu.
 Kiểm tra bản giao tiếp Manager thực tế trước khi tích hợp; không tự giả định API.
 Giữ cấu hình Ribbon và dữ liệu người dùng khi cập nhật.
-Add-in/skill chọn tài nguyên trong chính bảng cấu hình của công cụ và lưu mã/loại
-tài nguyên theo vai trò qua hợp đồng chung. Phạm vi hiện tại chỉ cấp mã định danh
-cho năm loại tài nguyên; không thêm tab tổng hợp sử dụng kho.
+Add-in/skill chọn tài nguyên trong chính bảng cấu hình của công cụ và lưu nguồn,
+loại và ID ổn định theo vai trò. Đọc docs/LIBRARY-CONSUMER-STANDARD.md và
+docs/RESOURCE-IDENTIFIERS.md; lưu cấu hình để QA kiểm tra xóa/gộp, nạp lại ở lần
+triển khai sau, không phục hồi mẫu/ID đã loại từ cache. QA chỉnh sửa thư viện;
+addin tiêu thụ không sửa danh mục hoặc journal. Không thêm tab tổng hợp sử dụng kho.
 Hiển thị tài nguyên đang dùng; không hardcode thay
 lựa chọn hoặc tự thay thế khi liên kết hỏng. Kiểm tra phiên bản, xung đột và tỷ lệ.
 Nếu kho chưa có cơ chế tích hợp cần thiết, nêu rõ và triển khai phần còn thiếu;

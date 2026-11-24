@@ -1,5 +1,7 @@
 # Mã định danh tài nguyên thư viện
 
+Khi viết add-in mới, đọc thêm [quy định dùng kho](LIBRARY-CONSUMER-STANDARD.md). Các ghi nhận ban đầu về cấp mã dưới đây không thay thế yêu cầu tích hợp xóa/gộp và nạp lại cấu hình theo QA 1.8.1.
+
 Ngày: 20/11/2026. Phạm vi hiện tại: Block, Layer, Dim, Text và Hatch của nguồn `ISO_QUANGANH` đã được đồng bộ. Không triển khai tab tổng hợp ai đang sử dụng kho.
 
 ## Mã và ID

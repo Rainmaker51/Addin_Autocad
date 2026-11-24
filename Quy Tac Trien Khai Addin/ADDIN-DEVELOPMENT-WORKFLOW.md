@@ -6,7 +6,13 @@ Ngày lập: 19/11/2026. Áp dụng cho mọi add-in .NET do dự án phát tri�
 
 Khi bắt đầu một yêu cầu phát triển add-in, đọc file này và `README.md` của add-in trong `Tools/dotnet/_Development`. Xác định kho đang kết nối qua `warehouse.local.json` của máy hiện tại; không dùng đường dẫn ổ đĩa của máy kia.
 
+Khi tạo mới hoặc thiết kế giao diện, đọc thêm `docs/ADDIN-UI-STANDARD.md`: dùng giao diện Axis làm chuẩn cả màu, bố cục và điều khiển. Đây là yêu cầu của dự án, không phải chỉ gợi ý thẩm mỹ; không tự chuyển đổi giao diện add-in cũ ngoài phạm vi được giao.
+
+Khi add-in mới sử dụng tài nguyên kho, đọc `docs/LIBRARY-CONSUMER-STANDARD.md` và `docs/RESOURCE-IDENTIFIERS.md`. Trong đầu vào và nghiệm thu phải chỉ rõ vai trò tài nguyên, cấu hình theo Manager ID, cách nạp lại sau xóa/gộp, chính sách khi nguồn chưa hoàn tất cập nhật và giới hạn kiểm tra phụ thuộc. Chỉ sửa tài liệu không làm các add-in cũ tự có các khả năng này.
+
 Mã nguồn chính nằm trong repo Git AI-CAD-MCP. Thư mục phát triển trong kho dùng để lưu gói DLL, thông tin build, ghi chú và bằng chứng kiểm thử theo từng add-in/phiên bản. Không tạo một bản source chỉnh sửa độc lập ngoài Git. Nếu đang làm dở, phải bàn giao commit hoặc bản vá cùng commit gốc để có thể tái tạo build.
+
+Đọc thêm `docs/TEST-ARTIFACT-LIFECYCLE.md` về vòng đời dữ liệu kiểm thử. Sau mỗi phiên phải giữ bằng chứng cần thiết, xác minh bản bàn giao và dọn dữ liệu tạm của phiên, kèm thống kê dung lượng. Profile AutoCAD/Host thử nghiệm dùng thư mục cục bộ `.tools/test-runs/<run-id>`, không sao chép hàng loạt vào kho đồng bộ.
 
 ## 2. Ba nơi có vai trò khác nhau
 
@@ -74,7 +80,7 @@ $sdk = if (Test-Path ./.tools/dotnet/dotnet.exe) { './.tools/dotnet/dotnet.exe' 
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 ```
 
-Thư mục `working` có thể bỏ sau khi build đã được lưu và kiểm tra, nhưng chỉ dọn các thư mục thuộc phiên công việc đó. Không tự xóa bản cũ, gói đang chọn hoặc nguồn chưa bàn giao.
+Thư mục `working` phải được rà soát và dọn sau khi build/bằng chứng đã được lưu và kiểm tra, theo `docs/TEST-ARTIFACT-LIFECYCLE.md`; chỉ dọn dữ liệu tạm thuộc phiên công việc đó. Không tự xóa bản cũ đã bàn giao, gói đang chọn hoặc nguồn chưa bàn giao. Nếu đang chờ cài hoặc bị khóa, ghi rõ thư mục còn giữ và lý do thay vì để tích lũy không ghi nhận.
 
 ## 5. Manifest tối thiểu
 
