@@ -13,13 +13,14 @@ namespace Arch.Suite.Host
         public string BlockName { get; set; }
         public string BoundaryLayer { get; set; }
         public string NameTag { get; set; }
+        public string CodeTag {get;set;}
         public string Level { get; set; }
         public string WallLayer { get; set; }
         public List<FrameColumn> Columns { get; set; } = new List<FrameColumn>();
         internal DrawingFrame ForBlock(string handle)
         {
             return new DrawingFrame { Handle = handle, BlockName = BlockName, BoundaryLayer = BoundaryLayer,
-                NameTag = NameTag, Level = Level, WallLayer = WallLayer,
+                NameTag = NameTag, CodeTag=CodeTag, Level = Level, WallLayer = WallLayer,
                 Columns = Columns.Select(c => new FrameColumn { Use=c.Use,Tag=c.Tag,Label=c.Label }).ToList() };
         }
         internal static FrameProfile From(DrawingFrame frame)
@@ -37,6 +38,10 @@ namespace Arch.Suite.Host
     internal sealed class DoorDefinition
     {
         public string BlockName { get; set; }
+        public string Kind {get;set;}="Cửa đi";
+        public bool NeedsKindConfirmation {get;set;}
+        public string TypeCode {get;set;}
+        public double SillMm {get;set;}
         public string WidthProperty { get; set; }
         public string HeightProperty { get; set; }
         public string HeightTag { get; set; }
@@ -47,6 +52,12 @@ namespace Arch.Suite.Host
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string FrameId { get; set; }
+        public string FloorId {get;set;}
+        public string Level {get;set;}
+        public string FrameName {get;set;}
+        public double ElevationMm {get;set;}
+        public double? BeamOverrideMm {get;set;}
+        public double SillMm {get;set;}
         public string Handle { get; set; }
         public string Kind { get; set; }
         public string Code { get; set; }
@@ -73,9 +84,12 @@ namespace Arch.Suite.Host
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var door in doors)
             {
-                if (string.IsNullOrWhiteSpace(door.BlockName) || !names.Add(door.BlockName) ||
+                if (string.IsNullOrWhiteSpace(door.BlockName) || !names.Add(door.BlockName+"/"+door.TypeCode) ||
                     string.IsNullOrWhiteSpace(door.WidthProperty))
                     throw new InvalidOperationException("Mỗi loại block cửa cần một định nghĩa và property chiều rộng.");
+                if(!string.IsNullOrWhiteSpace(door.TypeCode)&&string.IsNullOrWhiteSpace(door.CodeTag))throw new InvalidOperationException("Định nghĩa theo mã loại cần chọn tag mã cửa.");
+                if((door.Kind!="Cửa đi"&&door.Kind!="Cửa sổ")||door.SillMm<0||double.IsNaN(door.SillMm)||double.IsInfinity(door.SillMm))
+                    throw new InvalidOperationException("Chọn cửa đi/cửa sổ và cao bậu mm không âm.");
                 if (string.IsNullOrWhiteSpace(door.HeightProperty) && string.IsNullOrWhiteSpace(door.HeightTag) && !Positive(door.HeightMm))
                     throw new InvalidOperationException("Chọn nguồn chiều cao hoặc nhập chiều cao cửa dương.");
                 if (!string.IsNullOrWhiteSpace(door.HeightProperty) && !string.IsNullOrWhiteSpace(door.HeightTag))
@@ -145,7 +159,12 @@ namespace Arch.Suite.Host
             var block=Model.Resolve(tx,db,candidate.Handle) as BlockReference;
             if(block==null)throw new InvalidOperationException("Chọn block cửa.");
             var sample=Describe(tx,block);
-            var definition=definitions.SingleOrDefault(d=>d.BlockName==sample.BlockName);
+            var matches=definitions.Where(d=>string.Equals(d.BlockName,sample.BlockName,StringComparison.OrdinalIgnoreCase)).ToList();
+            var typed=matches.Where(d=>!string.IsNullOrWhiteSpace(d.TypeCode)&&sample.Attributes.TryGetValue(d.CodeTag??"",out var codeValue)&&string.Equals(codeValue,d.TypeCode,StringComparison.OrdinalIgnoreCase)).ToList();
+            var fallback=matches.Where(d=>string.IsNullOrWhiteSpace(d.TypeCode)).ToList();
+            if(typed.Count>1||(typed.Count==0&&fallback.Count>1))throw new InvalidOperationException("Nhiều định nghĩa cửa khớp; kiểm tra mã loại.");
+            var definition=typed.SingleOrDefault()??fallback.SingleOrDefault();
+            if(definition?.NeedsKindConfirmation==true)throw new InvalidOperationException("Định nghĩa cửa từ 0.4 cần xác nhận Cửa đi / Cửa sổ và lưu lại.");
             if(definition==null)throw new InvalidOperationException("Chưa có định nghĩa cửa cho "+sample.BlockName+".");
             if((block.Normal-Vector3d.ZAxis).Length>1e-8 || Math.Abs(Math.Abs(block.ScaleFactors.X)-Math.Abs(block.ScaleFactors.Y))>1e-8)
                 throw new InvalidOperationException("Cửa cần nằm trên XY và scale đều trong mặt bằng.");
@@ -173,7 +192,7 @@ namespace Arch.Suite.Host
             string code;
             if(string.IsNullOrWhiteSpace(definition.CodeTag)||!sample.Attributes.TryGetValue(definition.CodeTag,out code))
                 code=sample.BlockName;
-            return new SourceRegistration{FrameId=frame.Frame.Id,Handle=candidate.Handle,Kind="Cửa",Code=code,
+            return new SourceRegistration{FrameId=frame.Frame.Id,Handle=candidate.Handle,Kind=definition.Kind,Code=code,SillMm=definition.SillMm,
                 WidthMm=width*factor,HeightMm=height,
                 Evidence=sample.BlockName+" · rộng: "+definition.WidthProperty+" · cao: "+source,
                 Status="Đã đăng ký bộ cửa; chờ xác nhận tường / ô chờ"};

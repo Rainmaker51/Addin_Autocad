@@ -85,15 +85,7 @@ public class DefinitionSmoke
                 }
             }
             Check(doors>0,"No dynamic block properties exercised");
-            var catalog=Path.Combine(Root,"mock-warehouse","Catalog");
-            Directory.CreateDirectory(Path.Combine(catalog,"qa-transactions"));Directory.CreateDirectory(Path.Combine(catalog,"sync"));
-            File.WriteAllText(Path.Combine(catalog,"qa-transactions","ISO_QUANGANH.pending.json"),"{\"operation\":\"merge-hatches\",\"phase\":\"PREPARED\"}");
-            File.WriteAllText(Path.Combine(catalog,"sync","state.json"),"{\"Items\":[{\"Id\":\"0123456789abcdef0123456789abcdef\",\"Kind\":\"layers\",\"Name\":\"QA_KT_Tuong\",\"Draft\":false,\"Values\":{}}]}");
-            File.WriteAllText(Path.Combine(catalog,"resource-codes.json"),"{\"SchemaVersion\":1,\"Revision\":1,\"Items\":[{\"SourceId\":\"ISO_QUANGANH\",\"Kind\":\"layers\",\"Id\":\"0123456789abcdef0123456789abcdef\",\"Code\":\"LAY-0001\",\"Name\":\"QA_KT_Tuong\"}]}");
-            var mock=Path.GetDirectoryName(catalog);Check(ResourceLayers.PendingStatus(mock).Contains("merge-hatches"),"Missing journal detail");
-            Check(ResourceLayers.ReadOptions(mock,true).Single().Name=="QA_KT_Tuong","Published read-only choices blocked");
-            bool blocked=false;try{ResourceLayers.ReadOptions(mock);}catch(InvalidOperationException){blocked=true;}Check(blocked,"Pending resource apply not blocked");
-            File.WriteAllText(Path.Combine(Root,"definitions.txt"),"PASS: migration/profile clone and two real frames; wall area/original boundary; repeat IDs; overlapping/open/crossing rejected; "+doors+" dynamic blocks read with scaled distance property and height; height property and missing property/ATT rejected; pending QA readable with apply blocked.");
+            File.WriteAllText(Path.Combine(Root,"definitions.txt"),"PASS: migration/profile clone and two real frames; wall area/original boundary; repeat IDs; overlapping/open/crossing rejected; "+doors+" dynamic blocks read with scaled distance property and height; height property and missing property/ATT rejected.");
         }
         catch(System.Exception error){File.WriteAllText(Path.Combine(Root,"definitions.txt"),error.ToString());}
     }

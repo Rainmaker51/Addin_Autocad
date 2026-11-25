@@ -11,6 +11,102 @@
 
 ---
 
+## Triển khai cập nhật 0.5.0 — 25/11/2026
+
+Người dùng đã duyệt bổ sung: layer block chỉ xét tại điểm chèn; cửa đi/cửa sổ chuyên biệt không vào nội thất; thiết bị vệ sinh ưu tiên hơn nội thất; gom nhóm quản lý không đóng block nguồn; cao xây = cao tầng − cao dầm, cho dầm riêng từng tường; cửa sổ có bậu theo loại; khung đích tên/mã riêng; bỏ menu 0.2 nhưng giữ dữ liệu; chỉ đưa nhóm chọn sang đích; đối tượng mới được quét/đăng ký rồi thuộc nhóm liên kết; Preview/Apply từng khung và di chuyển toàn khung qua Arch.
+
+Quy tắc kho mới đã đọc: LIBRARY-READER-PROTOCOL.md V1, Consumer 1.2, Manager 0.10.0 cùng quy trình kho/kiểm thử. Arch chuyển sang Rainmaker.Library.Reader Private=false do Manager cung cấp, không tự ghép danh mục vật lý, không kèm Reader riêng. LIBRARY_PENDING chặn đọc/triển khai theo giao thức mới. Cấu hình hiện hành theo tool ID lưu tại Catalog/addin-settings, kiểm tra revision và ghi nguyên tử, ID đầy đủ để QA kiểm tra phụ thuộc.
+
+Phạm vi code 0.5.0:
+
+- Bỏ nhóm/tab 0.2 khỏi UI; giữ dữ liệu cũ trong DWG.
+- Cây Định nghĩa: Tường; Cửa → Cửa đi/Cửa sổ; Trục; Nội thất; Thiết bị vệ sinh. Trục và hai nhóm thiết bị hiện nhận bằng layer, chưa có định nghĩa trục chuyên sâu.
+- Danh mục tầng ID ổn định, cao độ/cao tầng/cao dầm; tường kế thừa hoặc dầm riêng. Đăng ký có tầng/khung, lọc kết hợp và định vị nguồn.
+- Tách tag mã khung khỏi thứ tự ATT danh mục, tránh sinh sai mã khi đổi cột. Profile và quét nhiều khung tiếp tục được giữ.
+- Sinh khung riêng tại vị trí mới, sao chép trạng thái hiển thị đã đăng ký theo nhóm chọn; giữ graph nguồn–đích và cache trong DWG. Không đếm hình đích thành nguồn.
+- Xem trước thay đổi nguồn/chiều cao/xóa nguồn, duyệt đồng bộ; bỏ nhóm giữ hình độc lập; di chuyển toàn khung. Chưa liên kết lại nhóm đã ngắt trong cùng khung để tránh chồng hình.
+- Khóa layer, block không explode; phục hồi nội dung bị sửa theo snapshot đã duyệt khi Arch đang nạp, kể cả Palette đóng. Cache có hard pointer chống PURGE. Bản sao dùng chung định nghĩa ngoài quản lý chỉ cảnh báo và chặn đồng bộ liên quan, không tự xóa.
+- Đọc schema 1, ghi schema 2; định nghĩa cửa 0.4 yêu cầu xác nhận lại loại, không tự kết luận cửa đi/cửa sổ. Không ghi bằng 0.4 sau khi nâng schema.
+
+Bản 0.4.0 đã bàn giao không ghi đè; tính năng mới tăng minor thành 0.5.0 theo quy trình. Các mục dưới giữ lịch sử yêu cầu/phương án; trạng thái hiện hành theo mục này, README và NOTES của gói kiểm thử.
+
+Còn lại: ô chờ/neo/flip, tự ngắt/nối tường, tính khối lượng trừ cửa, sinh dim/mã/hatch theo mẫu và sàn. Cần nghiệm thu GUI đặc thù, dock/DPI, BEDIT/REFEDIT/Undo/Redo và chuyển máy thật; không coi kết quả thử tổng hợp là nghiệm thu toàn bộ công trình.
+
+## Điều chỉnh cho bản Arch 0.4.0 — ghi nhận ngày 25/11/2026
+
+**Trạng thái:** ghi nhận yêu cầu mới để thống nhất trước khi sửa code. Mục này ưu tiên khi khác với mô tả giao diện/phạm vi của bản 0.4.0 đã đóng gói ngày 24/11. Không khẳng định những tính năng dưới đây đã có trong DLL 0.4.0 hiện tại. Chưa chốt số phiên bản của gói cập nhật tiếp theo.
+
+### 1. Loại bỏ luồng dữ liệu 0.2 khỏi giao diện
+
+- Bỏ nhóm **Công cụ dữ liệu 0.2** bên trái và tab **Dữ liệu 0.2** bên phải. Giao diện sử dụng một hệ thống quản lý theo khung, tầng và đối tượng đã đăng ký.
+- Các thao tác cần giữ lâu dài được đưa vào đúng module của hệ thống mới khi đã tương thích; không tiếp tục trình bày hai luồng đăng ký song song.
+- Việc bỏ menu/tab không đồng nghĩa tự xóa dữ liệu ARCH_SUITE_V1 trong các DWG đã có. Cách đọc/chuyển đổi hoặc ngừng dùng dữ liệu cũ cần thống nhất riêng trước khi thay đổi dữ liệu lưu.
+
+### 2. Menu Định nghĩa phân cấp, mở rộng theo đối tượng
+
+Thay tab gộp **Định nghĩa tường / cửa** bằng một điểm truy cập **Định nghĩa**, bên trong chọn module riêng:
+
+| Cấp 1 | Cấp 2 | Nội dung |
+|---|---|---|
+| Định nghĩa | Tường | Quy tắc nhận diện vùng tường, loại tường và nguồn chiều cao theo tầng. |
+| Định nghĩa | Cửa → Cửa đi | Quy tắc block/property, mã, kích thước và các tham số cửa đi. |
+| Định nghĩa | Cửa → Cửa sổ | Quy tắc block/property, mã, kích thước và các tham số cửa sổ; phân biệt với cửa đi. |
+| Định nghĩa | Trục | Quy tắc nhận diện/đăng ký trục; chi tiết cần bàn trước khi triển khai. |
+
+Mỗi module có màn hình thiết lập và thao tác lưu rõ ngữ cảnh. Có thể bổ sung nhóm định nghĩa khác theo cùng cấu trúc, không ghép tất cả biểu mẫu thành một trang dài. Giữ bảng trái gọn và ưu tiên diện tích vùng nội dung/preview. Vị trí menu dạng cây, danh sách hay menu xổ cần duyệt bố cục trước khi code.
+
+### 3. Chiều cao theo từng tầng
+
+- Bổ sung danh mục tầng có danh tính ổn định, tên tầng và chiều cao riêng. Khung nguồn gắn với một tầng; tường đăng ký trong khung truy ngược được về tầng đó.
+- Chiều cao tường mặc định lấy từ cấu hình tầng tương ứng, thay cho một giá trị chung toàn DWG. Khi đổi chiều cao một tầng, chỉ các tường đang dùng giá trị kế thừa của tầng đó được xác định là chịu ảnh hưởng.
+- Cần bàn rõ chiều cao tầng nhập là sàn–sàn hay cao thông thủy; không tự coi chiều cao xây bằng chiều cao tầng khi chưa có quy tắc trừ dầm/sàn hoặc cốt đáy/đỉnh.
+- Cần chốt có ghi đè chiều cao riêng theo loại/đoạn tường không. Nếu có, lưu nguồn giá trị và phân biệt Kế thừa theo tầng / Ghi đè để cập nhật tầng không mất giá trị riêng.
+- Cần thống nhất cách khởi tạo danh mục tầng từ những tên tầng dạng chuỗi đã lưu trong 0.4.0 và xử lý trùng tên; không làm mất liên kết khung đang có.
+
+### 4. Đưa chức năng Sinh bản vẽ vào đợt cập nhật mới
+
+**Yêu cầu:** bổ sung chức năng sinh bản vẽ trong đợt phát triển này. Cơ chế dưới đây là hướng đề xuất của người dùng, cần bàn tiếp trước khi triển khai.
+
+Luồng dự kiến:
+
+1. Chọn khung bản vẽ gốc đã đăng ký, ví dụ mặt bằng T1.
+2. Chọn những nhóm nội dung cần liên kết từ bản gốc, ví dụ tường, cửa đi, cửa sổ, trục. Chỉ cung cấp nhóm có định nghĩa/đăng ký thực sự; các nhóm chưa triển khai cần báo rõ.
+3. Chọn vị trí đặt bản vẽ mới. Bước đầu đề xuất đặt ở vị trí khác trong cùng Model của DWG; việc sinh sang DWG khác chưa mặc định nằm trong phạm vi.
+4. Sao chép khung tên thành khung đích có ID riêng; tạo nội dung biểu diễn từ nguồn theo các lựa chọn liên kết. Hình học được dời theo quan hệ nguồn–đích. Hình nguồn vẫn là nơi sửa thiết kế.
+5. Lưu quan hệ khung nguồn–khung đích và phạm vi liên kết. Bản vẽ đích chỉ nhận cập nhật từ nguồn; nội dung liên kết không cho chỉnh sửa trực tiếp.
+6. Khi nguồn hoặc cấu hình liên kết đổi, xác định khung chịu ảnh hưởng và đồng bộ đúng phần liên kết. Giữ nguyên nguyên tắc Preview / Apply theo từng khung cho đến khi người dùng thống nhất cơ chế khác.
+
+Các bản sao biểu diễn không được đăng ký lại như cấu kiện nguồn để tránh đếm trùng khối lượng. Cách triển khai nội bộ bằng block, thực thể quản lý hoặc giải pháp khác chưa được chốt chỉ từ yêu cầu sao chép.
+
+**Những điểm cần bàn về cơ chế sinh:**
+
+- Lần sinh đầu sao chép toàn bộ hình trong khung rồi chọn phần liên kết, hay chỉ đưa các nhóm được chọn sang khung đích? Nội dung chưa đăng ký/không liên kết được xử lý thế nào?
+- Mức chọn liên kết là nhóm đối tượng, từng đối tượng hay từng thuộc tính; nhóm nào cần có ngay ở bước đầu?
+- Khung tên được copy nhưng tên/mã bản vẽ đích cần giá trị riêng. Chốt ATT nào độc lập, ATT nào kế thừa, biên quét của khung đích và quy tắc đặt tên/mã không trùng.
+- Cho di chuyển toàn bộ khung đích bằng thao tác quản lý thế nào mà vẫn khóa việc sửa riêng nội dung liên kết? Chốt mốc đặt, scale và xoay được phép.
+- Thời điểm phát hiện thay đổi, nút đồng bộ và phạm vi Preview/Apply. Quy tắc khi nguồn bị xóa, nội dung mới được thêm, bản gốc mất hoặc bị ngắt liên kết.
+- Phạm vi khóa sửa: hình học, thuộc tính, xóa, explode và thay định nghĩa block dùng chung. Khóa layer đơn thuần chưa đủ để coi là đã bảo vệ liên kết.
+- Ghi chú thủ công tại khung đích, nếu cho phép, phải được phân biệt với nội dung liên kết và giữ khi cập nhật. Ngắt liên kết tiếp tục giữ hình như quy tắc đã duyệt.
+
+### 5. Danh sách Đã đăng ký có bộ lọc và vị trí tầng
+
+- Lọc theo loại: Tất cả / Tường / Cửa đi / Cửa sổ / Trục và các nhóm triển khai tiếp theo. Không gộp cửa đi và cửa sổ thành một loại Cửa không phân biệt.
+- Bổ sung lọc theo tầng và theo khung; có thể kết hợp với bộ lọc loại.
+- Hiển thị tối thiểu Loại, Mã, Tầng, Khung/bản vẽ nguồn và Trạng thái; giữ handle/ID để tra cứu khi cần. Kích thước/thuộc tính hiển thị theo loại đối tượng.
+- Chọn một dòng để định vị đối tượng nguồn và biết nó thuộc khung/tầng nào. Tầng và khung phải lấy từ quan hệ đã lưu, không suy đoán từ tên block hoặc vị trí tọa độ.
+- Cấu kiện nguồn và hình biểu diễn liên kết phải phân biệt; bộ lọc không biến các bản sao thành đối tượng tính khối lượng mới.
+
+### Tiêu chí duyệt cho đợt cập nhật
+
+- Không còn nhóm/tab dữ liệu 0.2 trên giao diện; mở DWG cũ không tự xóa dữ liệu.
+- Mỗi nhóm định nghĩa có trang riêng; cửa đi/cửa sổ phân biệt được và có chỗ cho trục/nhóm mới.
+- Hai tầng có chiều cao khác nhau; tường truy được tầng và dùng đúng quy tắc chiều cao đã thống nhất.
+- Danh sách đăng ký lọc kết hợp loại/tầng/khung và định vị đúng nguồn.
+- Sinh một khung đích ở vị trí mới với cấu hình liên kết được duyệt; sửa nguồn cập nhật đúng phần được chọn, phần liên kết ở đích không sửa trực tiếp được; không đếm trùng cấu kiện.
+- Lưu/mở lại DWG giữ danh mục tầng, định nghĩa, đăng ký và quan hệ nguồn–đích.
+
+---
+
 ## Điều chỉnh ngày 24/11/2026 — Quản lý bản vẽ theo khung
 
 **Architectural Suite** quản lý mỗi bản vẽ qua một khung block. Người dùng đăng ký khung nguồn, ví dụ mặt bằng tầng 1, rồi chỉ định biên quét tương ứng. Một cách tổ chức đề xuất là đặt biên trong layer `QA_KH_quét`. Khung block định danh bản vẽ, còn biên quét xác định phạm vi tìm nội dung. Tên layer chính thức, cách tìm biên thuộc từng khung và cách xử lý đối tượng cắt biên sẽ chốt ở bước đầu.

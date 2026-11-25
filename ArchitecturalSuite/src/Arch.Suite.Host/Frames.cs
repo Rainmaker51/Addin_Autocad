@@ -21,15 +21,21 @@ namespace Arch.Suite.Host
         public string BlockName { get; set; }
         public string BoundaryLayer { get; set; }
         public string Level { get; set; }
+        public string FloorId {get;set;}
+        public bool IsDerived {get;set;}
         public string NameTag { get; set; }
+        public string CodeTag {get;set;}
         public List<FrameColumn> Columns { get; set; } = new List<FrameColumn>();
         public string WallLayer { get; set; } = "QA_KT_Tuong";
     }
 
     internal sealed class FrameDocument
     {
-        public int Schema { get; set; } = 1;
+        public int Schema { get; set; } = 2;
         public int Revision { get; set; }
+        public List<FloorDefinition> Floors {get;set;}=new List<FloorDefinition>();
+        public List<LayerGroupDefinition> LayerGroups {get;set;}=new List<LayerGroupDefinition>();
+        public List<LinkedDrawing> Drawings {get;set;}=new List<LinkedDrawing>();
         public FrameProfile Profile { get; set; }
         public WallDefinition WallRule { get; set; } = new WallDefinition();
         public List<DoorDefinition> DoorRules { get; set; } = new List<DoorDefinition>();
@@ -50,21 +56,32 @@ namespace Arch.Suite.Host
                 if (values.Any(v => v.TypeCode != (int)DxfCode.Text || !(v.Value is string)))
                     throw new InvalidOperationException("Dữ liệu khung không đúng cấu trúc.");
                 var result = JsonConvert.DeserializeObject<FrameDocument>(string.Concat(values.Select(v => (string)v.Value)));
-                if (result == null || result.Schema != 1 || result.Frames == null ||
+                if (result == null || (result.Schema != 1 && result.Schema != 2) || result.Frames == null ||
                     result.Frames.Any(f => f == null || string.IsNullOrWhiteSpace(f.Id) || f.Columns == null) ||
                     result.Frames.Select(f => f.Id).Distinct().Count() != result.Frames.Count ||
                     result.Frames.Select(f => f.Handle).Distinct(StringComparer.OrdinalIgnoreCase).Count() != result.Frames.Count)
                     throw new InvalidOperationException("Phiên bản hoặc danh tính khung không hợp lệ.");
                 if(result.WallRule==null)result.WallRule=new WallDefinition();
                 if(result.DoorRules==null)result.DoorRules=new List<DoorDefinition>();
+                if(result.Schema==1)foreach(var door in result.DoorRules)door.NeedsKindConfirmation=true;
                 if(result.Registrations==null)result.Registrations=new List<SourceRegistration>();
+                result.Floors=result.Floors??new List<FloorDefinition>();
+                result.LayerGroups=result.LayerGroups??new List<LayerGroupDefinition>();
+                result.Drawings=result.Drawings??new List<LinkedDrawing>();
+                foreach(var frame in result.Frames)if(frame.FloorId==null)SuiteKinds.BindFloor(result,frame);
+                foreach(var source in result.Registrations)
+                {
+                    var owner=result.Frames.SingleOrDefault(f=>f.Id==source.FrameId);
+                    if(owner!=null)SuiteKinds.Stamp(source,result,owner);
+                }
                 return result;
             }
         }
 
         internal void Save(Database db, Transaction tx)
         {
-            Revision++;
+            DrawingLinks.KeepCaches(db,tx,this);
+            Schema=2;Revision++;
             var nod = (DBDictionary)tx.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForRead);
             Xrecord record;
             if (nod.Contains(Key)) record = (Xrecord)tx.GetObject(nod.GetAt(Key), OpenMode.ForWrite);
@@ -153,7 +170,7 @@ namespace Arch.Suite.Host
                     result.Attributes.Add(attribute.Tag, attribute.TextString);
             }
             result.Title = Attribute(result, frame.NameTag);
-            result.Code = Attribute(result, frame.Columns.FirstOrDefault(c => c.Use)?.Tag);
+            result.Code = Attribute(result, frame.CodeTag??frame.Columns.FirstOrDefault(c => c.Use)?.Tag);
             var boundaries = definition.Cast<ObjectId>().Select(id => tx.GetObject(id, OpenMode.ForRead))
                 .OfType<Polyline>().ToList();
             result.BoundaryLayers = boundaries.Select(p => p.Layer).Distinct().OrderBy(n => n).ToList();
@@ -242,9 +259,11 @@ namespace Arch.Suite.Host
         {
             var polygon = snapshot.Boundary;
             var model = (BlockTableRecord)tx.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(db), OpenMode.ForRead);
+            var managed=FrameDocument.Load(db,tx);
             foreach (ObjectId id in model)
             {
                 if (id.Handle.ToString() == snapshot.Frame.Handle) continue;
+                if(managed.Frames.Any(f=>f.Handle==id.Handle.ToString())||managed.Drawings.SelectMany(d=>d.Groups).Any(g=>g.ContentHandle==id.Handle.ToString()))continue;
                 var entity = tx.GetObject(id, OpenMode.ForRead) as Entity;
                 if (entity == null || !entity.Visible) continue;
                 Extents3d? bounds;

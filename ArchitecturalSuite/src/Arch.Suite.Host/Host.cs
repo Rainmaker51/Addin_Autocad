@@ -21,17 +21,25 @@ namespace Arch.Suite.Host
         private static Document observing;
         private static string pending;
         private static bool changed;
+        private static bool eventsRegistered;
+        private static bool protecting;
         public IReadOnlyList<CadRibbonPin> ManagedCommands => new[]
         {
             new CadRibbonPin { Command = "QAARCHOPEN", Label = "Architectural Suite" }
         };
-        public void Initialize() { }
-        public void InitializeManaged(Action<string> callback) { }
+        public void Initialize() { EnsureEvents(); }
+        private static void EnsureEvents()
+        {
+            if(eventsRegistered)return;eventsRegistered=true;
+            App.DocumentManager.DocumentActivated+=Activated;App.DocumentManager.DocumentToBeDestroyed+=Closing;
+            Observe(App.DocumentManager.MdiActiveDocument);
+        }
+        public void InitializeManaged(Action<string> callback) { EnsureEvents(); }
         public void Terminate()
         {
             App.DocumentManager.DocumentActivated -= Activated;
             App.DocumentManager.DocumentToBeDestroyed -= Closing;
-            Observe(null);
+            eventsRegistered=false;Observe(null);
             palette?.Dispose(); palette = null; panel = null; pending = null;
         }
         internal static void ApplyTheme(System.Windows.Window window)
@@ -85,7 +93,7 @@ namespace Arch.Suite.Host
         }
         private static void Modified(object sender, ObjectEventArgs args)
         {
-            if (pending == null && args.DBObject is Entity) changed = true;
+            if (pending == null && (args.DBObject is Entity||args.DBObject is LayerTableRecord||args.DBObject is BlockTableRecord)) changed = true;
         }
         private static void Erased(object sender, ObjectErasedEventArgs args)
         {
@@ -93,12 +101,23 @@ namespace Arch.Suite.Host
         }
         private static void Ended(object sender, CommandEventArgs args)
         {
-            if (pending != null || observing == null) return;
+            if (pending != null || protecting || observing == null) return;
             bool undo = new[] { "U", "UNDO", "REDO", "MREDO" }.Contains(args.GlobalCommandName, StringComparer.OrdinalIgnoreCase);
             if (!changed && !undo) return;
             changed = false;
             try
             {
+                protecting=true;
+                try
+                {
+                    using(observing.LockDocument())using(var tx=observing.Database.TransactionManager.StartTransaction())
+                    {
+                        var data=FrameDocument.Load(observing.Database,tx);
+                        if(DrawingLinks.Protect(observing.Database,tx,data)){data.Save(observing.Database,tx);observing.Editor.WriteMessage("\nArch: đã phục hồi nội dung liên kết theo bản đã duyệt. Sửa thiết kế tại nguồn.");}
+                        tx.Commit();
+                    }
+                }
+                finally{protecting=false;}
                 Refresh(observing);
                 ShowResult("DWG đã thay đổi. Quét lại khung để xem phạm vi và đối tượng hiện hành.");
             }
@@ -106,6 +125,7 @@ namespace Arch.Suite.Host
         }
         private static void Activated(object sender, DocumentCollectionEventArgs args)
         {
+            Observe(args.Document);
             panel?.ClearSelection();
             if (panel != null) panel.LegacyCandidates.ItemsSource = null;
             if (args.Document == null) return;
@@ -127,11 +147,13 @@ namespace Arch.Suite.Host
             using (var tx = doc.Database.TransactionManager.StartOpenCloseTransaction())
             {
                 var frames = FrameDocument.Load(doc.Database, tx);
+                DrawingLinks.CheckCopies(doc.Database,tx,frames);
                 var snapshots = ReadFrames(doc.Database, tx, frames);
                 panel.ClearBatch();
                 panel.SetData(doc.Name, snapshots, Model.Load(tx, doc.Database));
                 panel.SetDefinitions(frames);
-                panel.RegisteredSources.ItemsSource=frames.Registrations;
+                foreach(var item in frames.Registrations)if(Model.Resolve(tx,doc.Database,item.Handle)==null)item.Status="Nguồn đã xóa; chờ đồng bộ / gỡ đăng ký";
+                panel.SetRegistered(frames,snapshots);
             }
         }
         private static List<FrameSnapshot> ReadFrames(Database db, Transaction tx, FrameDocument data)
@@ -175,7 +197,7 @@ namespace Arch.Suite.Host
                         }
                     }
                     catch (OperationCanceledException) { ShowResult("Đã hủy thao tác."); }
-                    catch (System.Exception error) { ShowResult(error.Message); doc.Editor.WriteMessage("\n" + error.Message); }
+                    catch (System.Exception error) { var message=error is Rainmaker.Library.Reader.LibraryReadException libraryError?libraryError.Code+" · "+libraryError.Message:error.Message;ShowResult(message); doc.Editor.WriteMessage("\n" + message); }
                     return Task.CompletedTask;
                 }, null);
             }
@@ -196,6 +218,82 @@ namespace Arch.Suite.Host
                     data.Save(doc.Database,tx);tx.Commit();Refresh(doc);
                     ShowResult("Đã gỡ đăng ký; hình nguồn được giữ nguyên. Save DWG để giữ thay đổi.");return;
                 }
+                if(key=="frame-group-layer")
+                {
+                    var selected=doc.Editor.GetEntity("\nChọn đối tượng lấy layer chèn: ");if(selected.Status!=PromptStatus.OK)throw new OperationCanceledException();
+                    var entity=(Entity)tx.GetObject(selected.ObjectId,OpenMode.ForRead);
+                    if(entity.OwnerId!=SymbolUtilityServices.GetBlockModelSpaceId(doc.Database))throw new InvalidOperationException("Chọn đối tượng trực tiếp trong Model.");
+                    var existing=panel.GroupLayers.Text.Split(';').Select(v=>v.Trim()).Where(v=>v!="").ToList();existing.Add(entity.Layer);
+                    panel.GroupLayers.Text=string.Join("; ",existing.Distinct(StringComparer.OrdinalIgnoreCase));return;
+                }
+                if(key.StartsWith("frame-floor-",StringComparison.Ordinal))
+                {
+                    var floors=panel.ReadFloors();
+                    if(key=="frame-floor-add"){floors.Add(new FloorDefinition{Name="Tầng mới "+(floors.Count+1)});panel.Floors.Items.Refresh();ShowResult("Nhập cao tầng/dầm rồi Lưu tầng.");return;}
+                    if(key=="frame-floor-remove")
+                    {
+                        var selected=panel.Floors.SelectedItem as FloorDefinition;if(selected==null)throw new InvalidOperationException("Chọn tầng cần bỏ.");
+                        if(data.Frames.Any(f=>f.FloorId==selected.Id))throw new InvalidOperationException("Tầng đang được khung sử dụng.");floors.Remove(selected);panel.Floors.Items.Refresh();return;
+                    }
+                    foreach(var floor in floors)floor.Validate();
+                    if(floors.Select(f=>f.Name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=floors.Count||floors.Select(f=>f.Id).Distinct().Count()!=floors.Count)throw new InvalidOperationException("Tên/ID tầng không được trùng.");
+                    var profileFloor=data.Profile==null?null:data.Floors.SingleOrDefault(f=>f.Name==data.Profile.Level);
+                    if(profileFloor!=null){var renamed=floors.SingleOrDefault(f=>f.Id==profileFloor.Id);if(renamed!=null)data.Profile.Level=renamed.Name;}
+                    data.Floors=floors;
+                    foreach(var frame in data.Frames)
+                    {
+                        var floor=floors.SingleOrDefault(f=>f.Id==frame.FloorId);if(floor==null)SuiteKinds.BindFloor(data,frame);else frame.Level=floor.Name;
+                    }
+                    foreach(var item in data.Registrations)
+                    {
+                        var frame=data.Frames.Single(f=>f.Id==item.FrameId);SuiteKinds.Stamp(item,data,frame);
+                        if(item.Kind=="Tường")item.Status="Cần đăng ký/cập nhật theo cấu hình tầng hiện tại";
+                    }
+                    data.Save(doc.Database,tx);tx.Commit();Refresh(doc);ShowResult("Đã lưu tầng. Lưu khung để gắn tầng; đăng ký/cập nhật lại tường và đồng bộ đích khi cần.");return;
+                }
+                if(key=="frame-wall-beam")
+                {
+                    var selected=panel.RegisteredSources.SelectedItem as SourceRegistration;
+                    if(selected==null||selected.Kind!="Tường")throw new InvalidOperationException("Chọn một tường đã đăng ký.");
+                    var original=data.Registrations.Single(r=>r.Id==selected.Id);var frame=data.Frames.Single(f=>f.Id==original.FrameId);
+                    var snapshot=FrameReader.Read(doc.Database,tx,frame,true);var candidate=snapshot.Candidates.SingleOrDefault(c=>c.Handle==original.Handle);
+                    if(candidate==null)throw new InvalidOperationException("Tường đã ra ngoài khung/mất nguồn.");
+                    double? beam=string.IsNullOrWhiteSpace(panel.BeamOverride.Text)?(double?)null:SuitePanel.Nonnegative(panel.BeamOverride,"Cao dầm riêng");
+                    RegistrationService.Upsert(data,SuiteKinds.Register(doc.Database,tx,data,snapshot,candidate,beam));data.Save(doc.Database,tx);tx.Commit();Refresh(doc);ShowResult("Đã cập nhật dầm riêng / kế thừa tầng cho tường.");return;
+                }
+                if(key.StartsWith("frame-link-",StringComparison.Ordinal))
+                {
+                    var selected=data.Frames.SingleOrDefault(f=>f.Id==panel.SelectedId);
+                    var drawing=(panel.LinkedDrawings.SelectedItem as LinkedDrawing);
+                    drawing=drawing==null?data.Drawings.SingleOrDefault(d=>d.TargetFrameId==selected?.Id):data.Drawings.SingleOrDefault(d=>d.Id==drawing.Id);
+                    var source=key=="frame-link-create"?DrawingLinks.Source(data,selected):drawing==null?DrawingLinks.Source(data,selected):data.Frames.Single(f=>f.Id==drawing.SourceFrameId);
+                    if(key=="frame-link-preview")
+                    {
+                        var preview=DrawingLinks.Preview(doc.Database,tx,data,source,panel.LinkKinds,drawing);ShowResult(preview);doc.Editor.WriteMessage("\n"+preview);return;
+                    }
+                    if(key=="frame-link-create"||key=="frame-link-sync")
+                    {
+                        if(panel.LinkKinds.Count==0)throw new InvalidOperationException("Chọn nhóm cần liên kết.");
+                        var preview=DrawingLinks.Preview(doc.Database,tx,data,source,panel.LinkKinds,key=="frame-link-create"?null:drawing);
+                        doc.Editor.WriteMessage("\n"+preview+"\nNhóm bỏ chọn sẽ ngắt và giữ hình độc lập.");
+                        var approval=new PromptKeywordOptions("\nDuyệt thay đổi [Apply/Skip] <Skip>: ");approval.Keywords.Add("Apply");approval.Keywords.Add("Skip");approval.Keywords.Default="Skip";
+                        var answer=doc.Editor.GetKeywords(approval);if(answer.Status!=PromptStatus.OK||answer.StringResult!="Apply")throw new OperationCanceledException();
+                    }
+                    if(key=="frame-link-create")
+                    {
+                        var point=doc.Editor.GetPoint("\nVị trí mốc chèn khung đích: ");if(point.Status!=PromptStatus.OK)throw new OperationCanceledException();
+                        DrawingLinks.Create(doc.Database,tx,data,source,panel.DrawingName.Text.Trim(),panel.DrawingCode.Text.Trim(),point.Value.TransformBy(doc.Editor.CurrentUserCoordinateSystem),panel.LinkKinds);
+                    }
+                    else
+                    {
+                        if(drawing==null)throw new InvalidOperationException("Chọn dòng bản vẽ liên kết cần thao tác.");
+                        if(key=="frame-link-sync")DrawingLinks.Sync(doc.Database,tx,data,drawing,panel.LinkKinds);
+                        else if(key=="frame-link-unlink")DrawingLinks.Unlink(doc.Database,tx,drawing);
+                        else if(key=="frame-link-move")
+                        {var point=doc.Editor.GetPoint("\nVị trí mới của khung đích: ");if(point.Status!=PromptStatus.OK)throw new OperationCanceledException();DrawingLinks.Move(doc.Database,tx,data,drawing,point.Value.TransformBy(doc.Editor.CurrentUserCoordinateSystem));}
+                    }
+                    data.Save(doc.Database,tx);tx.Commit();Refresh(doc);ShowResult("Đã cập nhật bản vẽ liên kết. Save DWG để giữ quan hệ và hình.");return;
+                }
                 if(key=="frame-door-sample")
                 {
                     var options=new PromptEntityOptions("\nChọn block cửa dynamic mẫu: ");
@@ -210,7 +308,15 @@ namespace Arch.Suite.Host
                 if(key=="frame-definitions-save")
                 {
                     var wall=panel.ReadWallRule();var door=panel.ReadDoorRule();
-                    var rules=data.DoorRules.Where(d=>door==null||d.BlockName!=door.BlockName).ToList();
+                    var rules=data.DoorRules.Where(d=>door==null||!string.Equals(d.BlockName,door.BlockName,StringComparison.OrdinalIgnoreCase)||!string.Equals(d.TypeCode??"",door.TypeCode??"",StringComparison.OrdinalIgnoreCase)).ToList();
+                    if(panel.DefinitionKind!="Tường"&&panel.DefinitionKind!="Cửa đi"&&panel.DefinitionKind!="Cửa sổ")
+                    {
+                        var layers=panel.GroupLayers.Text.Split(new[]{';',',','\r','\n'},StringSplitOptions.RemoveEmptyEntries).Select(v=>v.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                        var table=(LayerTable)tx.GetObject(doc.Database.LayerTableId,OpenMode.ForRead);
+                        if(layers.Count==0||layers.Any(v=>!table.Has(v)))throw new InvalidOperationException("Chọn ít nhất một layer có trong DWG.");
+                        data.LayerGroups.RemoveAll(g=>g.Kind==panel.DefinitionKind);data.LayerGroups.Add(new LayerGroupDefinition{Kind=panel.DefinitionKind,Layers=layers});
+                    }
+                    if((panel.DefinitionKind=="Cửa đi"||panel.DefinitionKind=="Cửa sổ")&&door==null)throw new InvalidOperationException("Chọn block mẫu và khai báo cửa trước khi lưu.");
                     if(door!=null)rules.Add(door);
                     RegistrationService.Validate(wall,rules);
                     data.WallRule=wall;data.DoorRules=rules;data.Save(doc.Database,tx);tx.Commit();
@@ -268,7 +374,7 @@ namespace Arch.Suite.Host
                             var check=FrameReader.Read(doc.Database,tx,item.Frame,false);
                             RegistrationService.ValidateFrame(item.Frame,check);
                             data.Frames.RemoveAll(f=>f.Id==item.Frame.Id);
-                            data.Frames.Add(item.Frame);count++;
+                            SuiteKinds.BindFloor(data,item.Frame);data.Frames.Add(item.Frame);count++;
                         }
                         catch(InvalidOperationException error){item.Status=error.Message;failed.Add(item);errors.Add("#"+item.Frame.Handle+": "+error.Message);}
                     }
@@ -281,34 +387,32 @@ namespace Arch.Suite.Host
                     ShowResult("Đã lưu "+count+" khung, "+errors.Count+" lỗi. "+string.Join(" · ",errors.Take(3))+" Save DWG để giữ dữ liệu.");
                     return;
                 }
-                if(key=="frame-register-walls"||key=="frame-register-doors")
+                if(key=="frame-register-walls"||key=="frame-register-doors"||key=="frame-register-all")
                 {
                     RegistrationService.Validate(data.WallRule,data.DoorRules);
                     var frame=data.Frames.SingleOrDefault(f=>f.Id==panel.SelectedId);
-                    if(frame==null)throw new InvalidOperationException("Lưu khung trước khi đăng ký cấu kiện.");
+                    if(frame==null||frame.IsDerived)throw new InvalidOperationException("Chọn khung nguồn đã lưu để đăng ký; không đăng ký hình đích.");
                     if(frame.WallLayer!=data.WallRule.Layer)throw new InvalidOperationException("Lưu khung với layer vùng tường khớp định nghĩa trước.");
                     if(key=="frame-register-doors" && data.DoorRules.Count==0)
                         throw new InvalidOperationException("Chọn block cửa mẫu và Lưu định nghĩa trước khi đăng ký cửa.");
                     var snapshot=FrameReader.Read(doc.Database,tx,frame,true);
-                    var candidates=snapshot.Candidates.Where(c=>key=="frame-register-walls"?
-                        c.Layer.Equals(data.WallRule.Layer,StringComparison.OrdinalIgnoreCase):c.Kind=="Block dynamic"||c.Kind=="Block").ToList();
-                    if(key=="frame-register-doors")
-                        candidates=candidates.Where(c=>data.DoorRules.Any(d=>d.BlockName==RegistrationService.Describe(tx,(BlockReference)Model.Resolve(tx,doc.Database,c.Handle)).BlockName)).ToList();
+                    var candidates=snapshot.Candidates.Where(c=>key=="frame-register-all"||key=="frame-register-walls"&&c.Layer.Equals(data.WallRule.Layer,StringComparison.OrdinalIgnoreCase)||key=="frame-register-doors"&&(c.Kind=="Block dynamic"||c.Kind=="Block")).ToList();
                     int count=0;var errors=new List<string>();
                     foreach(var candidate in candidates)
                     {
                         try
                         {
-                            var source=key=="frame-register-walls"?
-                                RegistrationService.ReadWall(doc.Database,tx,snapshot,candidate,data.WallRule):
-                                RegistrationService.ReadDoor(doc.Database,tx,snapshot,candidate,data.DoorRules);
+                            var kind=SuiteKinds.Classify(tx,Model.Resolve(tx,doc.Database,candidate.Handle),data);
+                            if(kind==null||key=="frame-register-doors"&&kind!="Cửa đi"&&kind!="Cửa sổ")continue;
+                            var previous=data.Registrations.SingleOrDefault(r=>r.Handle==candidate.Handle);
+                            var source=SuiteKinds.Register(doc.Database,tx,data,snapshot,candidate,previous?.BeamOverrideMm);
                             RegistrationService.Upsert(data,source);count++;
                         }
                         catch(InvalidOperationException error){errors.Add("#"+candidate.Handle+": "+error.Message);candidate.Reason=error.Message;candidate.Registered="Chưa đăng ký";}
                     }
                     if(count>0){data.Save(doc.Database,tx);tx.Commit();Refresh(doc);}
                     MarkRegistrations(snapshot,data);
-                    panel.SelectSnapshot(snapshot);panel.RegisteredSources.ItemsSource=data.Registrations;
+                    panel.SelectSnapshot(snapshot);using(var read=doc.Database.TransactionManager.StartOpenCloseTransaction())panel.SetRegistered(data,ReadFrames(doc.Database,read,data));
                     ShowResult("Đã đăng ký/cập nhật "+count+", bỏ qua "+errors.Count+". "+string.Join(" · ",errors.Take(3)));
                     return;
                 }
@@ -400,6 +504,7 @@ namespace Arch.Suite.Host
                 MarkRegistrations(selectedFrameSnapshot,data);
                 if (key == "frame-save")
                 {
+                    if(draftFrame.IsDerived)throw new InvalidOperationException("Khung đích quản lý qua Bản vẽ liên kết; sửa thiết kế tại nguồn.");
                     if (string.IsNullOrWhiteSpace(draftFrame.Level)) throw new InvalidOperationException("Nhập tên tầng.");
                     if (string.IsNullOrEmpty(draftFrame.NameTag) || !selectedFrameSnapshot.Attributes.ContainsKey(draftFrame.NameTag))
                         throw new InvalidOperationException("Chọn tag ATT tên bản vẽ hợp lệ.");
@@ -410,6 +515,7 @@ namespace Arch.Suite.Host
                     if (data.Frames.Any(f => f.Handle == draftFrame.Handle && f.Id != draftFrame.Id))
                         throw new InvalidOperationException("Block khung này đã đăng ký. Chọn dòng hiện có để sửa.");
                     data.Frames.RemoveAll(f => f.Id == draftFrame.Id);
+                    SuiteKinds.BindFloor(data,draftFrame);
                     data.Frames.Add(draftFrame);
                     data.Profile=FrameProfile.From(draftFrame);
                     data.Save(doc.Database, tx); tx.Commit();
@@ -447,8 +553,7 @@ namespace Arch.Suite.Host
                 var container=new System.Windows.Controls.Border{Padding=new System.Windows.Thickness(8,6,18,16),
                     Child=panel,ClipToBounds=true,Background=(System.Windows.Media.Brush)panel.Resources["ToolBackground"]};
                 palette.AddVisual("Bảng điều khiển", container, true);
-                App.DocumentManager.DocumentActivated += Activated;
-                App.DocumentManager.DocumentToBeDestroyed += Closing;
+                EnsureEvents();
             }
             palette.Visible = true;
             if (App.DocumentManager.MdiActiveDocument != null)

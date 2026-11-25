@@ -78,7 +78,7 @@ public class FrameSmoke
                     p.LayerId = wallLayer; p.TransformBy(block.BlockTransform); Add(model, p, tx);
                 }
                 var config = new DrawingFrame { Handle = block.Handle.ToString(), BlockName = "FRAME_TEST",
-                    BoundaryLayer = "QA_KH_Quet", NameTag = "TENBANVE", Level = "T1",
+                    BoundaryLayer = "QA_KH_Quet", NameTag = "TENBANVE", CodeTag="KHBV", Level = "T1",
                     Columns = new System.Collections.Generic.List<FrameColumn> {
                         new FrameColumn{Tag="KHBV",Label="Mã"}, new FrameColumn{Tag="TENBANVE",Label="Tên"} } };
                 var snapshot = FrameReader.Read(db, tx, config, true);
@@ -165,7 +165,7 @@ public class FrameSmoke
             try
             {
                 var panel = new SuitePanel(key => { });
-                panel.SetData("Mặt bằng thử.dwg", snapshots, model);panel.SetDefinitions(definitions);
+                panel.SetData("Mặt bằng thử.dwg", snapshots, model);panel.SetDefinitions(definitions);panel.SetRegistered(definitions,snapshots);
                 Demand((string)panel.BoundaryLayer.SelectedItem == "QA_KH_Quet", "Boundary choice missing after reload");
                 Demand(panel.ReadDraft().BoundaryLayer == "QA_KH_Quet", "Boundary choice not saved");
                 panel.Attributes.SelectedItem = panel.DraftColumns[1];
@@ -183,8 +183,10 @@ public class FrameSmoke
                     var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
                     using (var file = File.Create(Path.Combine(root,"frame-ui-"+size.Width+".png"))) encoder.Save(file);
                 }
-                var details=Find<System.Windows.Controls.TabControl>(panel).Single(t=>t.Items.OfType<System.Windows.Controls.TabItem>().Any(i=>Equals(i.Header,"Định nghĩa tường / cửa")));
-                details.SelectedItem=details.Items.OfType<System.Windows.Controls.TabItem>().Single(i=>Equals(i.Header,"Định nghĩa tường / cửa"));
+                Demand(!Find<System.Windows.Controls.TabControl>(panel).SelectMany(t=>t.Items.OfType<System.Windows.Controls.TabItem>()).Any(i=>Equals(i.Header,"Dữ liệu 0.2")),"Legacy tab still visible");
+                if(definitions.Registrations.Count>0){panel.FilterKind.SelectedItem="Tường";Demand(panel.RegisteredSources.Items.Count==definitions.Registrations.Count(r=>r.Kind=="Tường"),"Kind filter mismatch");panel.FilterKind.SelectedItem="Tất cả";}
+                var details=Find<System.Windows.Controls.TabControl>(panel).Single(t=>t.Items.OfType<System.Windows.Controls.TabItem>().Any(i=>Equals(i.Header,"Định nghĩa")));
+                details.SelectedItem=details.Items.OfType<System.Windows.Controls.TabItem>().Single(i=>Equals(i.Header,"Định nghĩa"));
                 var wrap=new System.Windows.Controls.Border{Padding=new Thickness(8,6,18,16),Child=panel};
                 var reviewSize=new Size(1240,760);wrap.Measure(reviewSize);wrap.Arrange(new Rect(reviewSize));wrap.UpdateLayout();
                 System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Background,new Action(()=>{}));
@@ -196,6 +198,17 @@ public class FrameSmoke
                 {
                     var rect=button.TransformToAncestor(wrap).TransformBounds(new Rect(button.RenderSize));
                     Demand(rect.Right<=reviewSize.Width-17 && rect.Bottom<=reviewSize.Height-15,"Header/footer exceeds native client padding");
+                }
+                Action<string> capture=name=>{
+                    wrap.Measure(reviewSize);wrap.Arrange(new Rect(reviewSize));wrap.UpdateLayout();
+                    System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Background,new Action(()=>{}));wrap.UpdateLayout();
+                    var png=new RenderTargetBitmap(1240,760,96,96,PixelFormats.Pbgra32);png.Render(wrap);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(png));using(var stream=File.Create(Path.Combine(root,name+".png")))encoder.Save(stream);
+                };
+                var window=Find<System.Windows.Controls.TreeViewItem>(panel).Single(i=>Equals(i.Tag,"Cửa sổ"));window.IsSelected=true;capture("definitions-window-ui");
+                foreach(var name in new[]{"Tầng","Đã đăng ký","Bản vẽ liên kết"})
+                {
+                    details.SelectedItem=details.Items.OfType<System.Windows.Controls.TabItem>().Single(i=>Equals(i.Header,name));
+                    capture(name=="Tầng"?"floors-ui":name=="Đã đăng ký"?"registered-ui":"links-ui");
                 }
                 File.WriteAllText(Path.Combine(root, "frame-ui.txt"), "PASS: WPF theme and compact layout at 1240x760 / 800x580; definition form; contextual primary button and header/footer client padding.");
             }

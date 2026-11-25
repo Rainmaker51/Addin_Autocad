@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 <PropertyGroup><TargetFramework>net48</TargetFramework><PlatformTarget>x64</PlatformTarget><AutoCadDir Condition="'$(AutoCadDir)'==''">$(ProgramFiles)/Autodesk/AutoCAD 2021</AutoCadDir></PropertyGroup>
 <ItemGroup><ProjectReference Include="../../src/Arch.Suite.Host/Arch.Suite.Host.csproj" Private="false"/>
+<Reference Include="Rainmaker.Library.Reader" HintPath="../../../../AI-CAD-MCP/src/Library.Reader/bin/Release/netstandard2.0/Rainmaker.Library.Reader.dll" Private="false"/>
+<Reference Include="Newtonsoft.Json" HintPath="../../../../AI-CAD-MCP/src/CAD.Bridge.AutoCAD/bin/Release/net48/Newtonsoft.Json.dll" Private="false"/>
 <Reference Include="CAD.Contracts" HintPath="../../../../AI-CAD-MCP/src/CAD.Contracts/bin/Release/netstandard2.0/CAD.Contracts.dll" Private="false"/>
 <Reference Include="acdbmgd" HintPath="$(AutoCadDir)/acdbmgd.dll" Private="false"/><Reference Include="accoremgd" HintPath="$(AutoCadDir)/accoremgd.dll" Private="false"/><Reference Include="acmgd" HintPath="$(AutoCadDir)/acmgd.dll" Private="false"/><Reference Include="WindowsBase"/><Reference Include="PresentationCore"/><Reference Include="PresentationFramework"/><Reference Include="System.Xaml"/><Reference Include="System.Data"/></ItemGroup>
 </Project>
