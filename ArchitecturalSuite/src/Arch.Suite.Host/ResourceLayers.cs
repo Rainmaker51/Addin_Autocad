@@ -28,11 +28,12 @@ namespace Arch.Suite.Host
         public string Settings {get;set;}
         public string SourceFile {get;set;}
         public string ReaderRevision {get;set;}
+        public bool IsUnavailable {get;set;}
         public override string ToString()=>Code+" · "+Name;
     }
     internal static class ResourceLayers
     {
-        private static string AppRoot()
+        internal static string AppRoot()
         {
             var file=Path.Combine(Path.GetDirectoryName(typeof(AICad.Bridge.Plugin).Assembly.Location),"..","install.json");
             if(!File.Exists(file))throw new InvalidOperationException("Mở Architectural Suite qua Manager để đọc kho.");
@@ -65,11 +66,21 @@ namespace Arch.Suite.Host
             string pending=null;
             var resources=ReadOptions(appRoot);
             var preferences=LibraryPreferences.Load(appRoot);
+            var frameData=FrameDocument.Load(doc.Database,tx);
+            var bindings=(JObject)preferences["Bindings"];
+            foreach(var item in frameData.PendingLibraryBindings)bindings[item.Key]=JObject.FromObject(item.Value);
             var options=resources.Where(r=>r.Kind=="layers").ToList();
             var wall=new ComboBox{ItemsSource=options,IsTextSearchEnabled=true,MinWidth=300};
             var door=new ComboBox{ItemsSource=options,IsTextSearchEnabled=true};
-            wall.SelectedItem=options.FirstOrDefault(o=>o.Id==model.WallLayer?.Id)??(model.WallLayer==null?LibraryPreferences.Resolve(preferences,"wall",options):null);
-            door.SelectedItem=options.FirstOrDefault(o=>o.Id==model.DoorLayer?.Id)??(model.DoorLayer==null?LibraryPreferences.Resolve(preferences,"door",options):null);
+            wall.SelectedItem=frameData.PendingLibraryBindings.ContainsKey("wall")?LibraryPreferences.Resolve(preferences,"wall",options):options.FirstOrDefault(o=>o.Id==model.WallLayer?.Id)??(model.WallLayer==null?LibraryPreferences.Resolve(preferences,"wall",options):null);
+            door.SelectedItem=frameData.PendingLibraryBindings.ContainsKey("door")?LibraryPreferences.Resolve(preferences,"door",options):options.FirstOrDefault(o=>o.Id==model.DoorLayer?.Id)??(model.DoorLayer==null?LibraryPreferences.Resolve(preferences,"door",options):null);
+            LayerRole Pending(string role,List<LayerRole> choices)
+            {
+                var resolved=LibraryPreferences.Resolve(preferences,role,choices);if(resolved!=null)return resolved;
+                var binding=frameData.PendingLibraryBindings[role];var missing=new LayerRole{SourceId=binding.SourceId,Kind=binding.Kind,Id=binding.Id,Code="Không khả dụng",Name=role+" · "+binding.Id,IsUnavailable=true};choices.Add(missing);return missing;
+            }
+            if(frameData.PendingLibraryBindings.ContainsKey("wall")&&wall.SelectedItem==null){wall.SelectedItem=Pending("wall",options);wall.Items.Refresh();}
+            if(frameData.PendingLibraryBindings.ContainsKey("door")&&door.SelectedItem==null){door.SelectedItem=Pending("door",options);door.Items.Refresh();}
             var panel=new StackPanel{Margin=new Thickness(12)};
             if(pending!=null)panel.Children.Add(new TextBlock{Text=pending+"\nĐang xem bản công bố trước. Hoàn tất đồng bộ trong QA trước khi áp dụng.",TextWrapping=TextWrapping.Wrap,MaxWidth=460,Margin=new Thickness(0,0,0,8)});
             panel.Children.Add(new TextBlock{Text="Nét tường và đường chuẩn"});panel.Children.Add(wall);
@@ -80,6 +91,7 @@ namespace Arch.Suite.Host
                 choices.Insert(0,new LayerRole{Name="Không dùng"});
                 var combo=new ComboBox{ItemsSource=choices,IsTextSearchEnabled=true};
                 LayerRole prior;if(model.Styles.TryGetValue(spec[0],out prior))combo.SelectedItem=choices.FirstOrDefault(r=>r.Id==prior.Id);
+                if(frameData.PendingLibraryBindings.ContainsKey(spec[0]))combo.SelectedItem=Pending(spec[0],choices);
                 if(combo.SelectedItem==null&&!model.Styles.ContainsKey(spec[0]))combo.SelectedItem=LibraryPreferences.Resolve(preferences,spec[0],resources);
                 if(combo.SelectedItem==null)combo.SelectedIndex=0;
                 panel.Children.Add(new TextBlock{Text=spec[1]+" (tùy chọn)",Margin=new Thickness(0,6,0,0)});panel.Children.Add(combo);additional[spec[0]]=combo;
@@ -94,6 +106,7 @@ namespace Arch.Suite.Host
                 additional.ToDictionary(i=>i.Key,i=>i.Value.SelectedItem as LayerRole));
             var roles=additional.ToDictionary(i=>i.Key,i=>i.Value.SelectedItem as LayerRole);roles["wall"]=(LayerRole)wall.SelectedItem;roles["door"]=(LayerRole)door.SelectedItem;
             LibraryPreferences.Save(appRoot,(int)preferences["Revision"],roles);
+            frameData.PendingLibraryBindings.Clear();frameData.Save(doc.Database,tx);
         }
         internal static List<LayerRole> ReadOptions(string appRoot,bool allowPendingRead=false)
         {
@@ -105,6 +118,7 @@ namespace Arch.Suite.Host
         {
             var snapshot=LibraryReader.Open(appRoot).Read();
             var selected=new[]{wall,door}.Concat(additional.Values).Where(r=>r?.Id!=null).ToList();
+            if(selected.Any(r=>r.IsUnavailable))throw new InvalidOperationException("Chọn lại tài nguyên đang báo Không khả dụng trước khi áp dụng.");
             if(selected.Any(r=>r.ReaderRevision!=snapshot.Revision))throw new InvalidOperationException("Kho đã thay đổi. Mở lại bộ chọn tài nguyên.");
             var resolved=snapshot.ResolveResources(selected.Select(r=>new ResourceKeyV1(r.SourceId,r.Kind,r.Id)));
             foreach(var role in selected)

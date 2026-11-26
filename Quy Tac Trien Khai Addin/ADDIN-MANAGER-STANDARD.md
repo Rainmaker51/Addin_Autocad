@@ -22,6 +22,8 @@ Trong dự án AI-CAD-MCP, đọc thêm `docs/ADDIN-DEVELOPMENT-WORKFLOW.md` đ�
 
 ### Tài nguyên từ kho và cấu hình nghiệp vụ
 
+Từ Manager 0.10.0, add-in mới dùng kho phải tích hợp [Reader V1](LIBRARY-READER-PROTOCOL.md). `Rainmaker.Library.Reader.dll` là thành phần dùng chung do Manager triển khai/nạp, không phải công cụ có Ribbon hoặc bảng riêng. Không nhập DLL này thành add-in và không kèm bản riêng trong gói consumer. Axis 1.9.0 dùng Reader; các công cụ cũ không tự chuyển đổi. Reader V1 không thay API vẽ, đăng ký lệnh hay cơ chế cấu hình nghiệp vụ của Manager.
+
 Thư viện QA quản lý tài nguyên gốc, không duyệt quyền sử dụng và không yêu cầu Role. Từng add-in chọn block/layer/dim/hatch theo ID ổn định, lưu cấu hình riêng ở `Catalog/addin-settings/<tool-id>.json` và tự kiểm tra yêu cầu nghiệp vụ như tag ATT, visibility, tham số động, phạm vi giá trị. Không ghi đè Usage/template chung để cấu hình cho riêng một công cụ. Dùng các DLL đang có; không phát sinh dịch vụ nền để đọc kho hoặc kiểm tra lựa chọn. Xem `QA-RESOURCE-WORKFLOW.md`.
 
 Add-in không tự tạo tab, panel hay nút Ribbon, không tự đăng ký nạp bằng Registry, Startup Suite hoặc cơ chế khác song song với Manager. Gói cài thông thường được nhập qua Manager; chính CAD Tool Manager là bộ lõi có trình cài riêng.

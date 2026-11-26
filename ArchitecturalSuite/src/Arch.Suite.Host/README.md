@@ -1,6 +1,6 @@
-﻿# Architectural Suite 0.5.0
+﻿# Architectural Suite 0.6.0
 
-AutoCAD 2021 x64 / .NET Framework 4.8. Giữ một nút QAARCHOPEN, tool ID b40fc389e1784687b8e85403c213c024 và Palette GUID hiện có. Bản 0.5.0 bổ sung tầng, định nghĩa phân nhóm và sinh bản vẽ liên kết theo các quyết định ngày 25/11/2026.
+AutoCAD 2021 x64 / .NET Framework 4.8. Giữ một nút QAARCHOPEN, tool ID b40fc389e1784687b8e85403c213c024 và Palette GUID hiện có. Bản 0.6.0 sửa đồng bộ tầng, bổ sung xuất/nạp bộ định nghĩa, hỗ trợ Spline khi sinh bản vẽ và sửa điều hướng tới nguồn. Giữ luồng vẽ nguồn bằng add-in và đồng bộ hình đích từ nguồn.
 
 ## Điều kiện chạy và quy tắc kho mới
 
@@ -14,7 +14,7 @@ Theo Reader V1 mới, khi gặp LIBRARY_PENDING/CATALOG_CHANGED hoặc lỗi to�
 
 1. Vẽ bản nguồn trong Model; dùng block khung có đúng một Polyline kín cạnh thẳng làm biên quét. Mở Arch từ Manager, Chọn khung mẫu.
 2. Chọn tag tên, **tag mã bản vẽ riêng**, layer biên và tên tầng. Setup ATT chỉ quyết định cột/thứ tự danh mục; không quyết định tag mã. Lưu profile để quét chọn nhiều khung cùng mẫu, sửa tầng từng dòng hoặc áp tầng hàng loạt rồi lưu tập hợp lệ.
-3. Tab Tầng: Thêm tầng, nhập tên, cao độ sàn, cao tầng và cao dầm (mm), Lưu tầng. Cao xây mặc định = cao tầng − cao dầm. Tên tầng không trùng; cao dầm từ 0 và nhỏ hơn cao tầng. Khung được gắn tầng theo tên khi lưu; tầng đã gắn giữ ID khi đổi tên. Sau khi thêm tầng tương ứng có thể Lưu khung lại để gắn rõ quan hệ.
+3. Tầng của khung và tab Tầng dùng cùng danh mục. Chọn khung sẽ chọn dòng tầng tương ứng; tên tầng mới được thêm với trạng thái chờ khai báo chiều cao. Nhập cao độ sàn, cao tầng và cao dầm (mm), Lưu tầng. Cao xây = cao tầng − cao dầm; chưa khai báo chiều cao thì không dùng để tính tường. Tên không trùng; cao dầm từ 0 và nhỏ hơn cao tầng. Đổi tên giữ ID và cập nhật khung/đăng ký; đổi chiều cao đánh dấu tường và bản liên kết cần cập nhật, không âm thầm sửa hình.
 4. Tab Định nghĩa: chọn module riêng trong cây Tường / Cửa → Cửa đi, Cửa sổ / Trục / Nội thất / Thiết bị vệ sinh. Bấm Lưu định nghĩa theo ngữ cảnh.
 5. Chọn khung nguồn đã lưu, Quét trong khung và Đăng ký các nhóm hợp lệ; hoặc đăng ký riêng tường/cửa. Đối tượng chưa đủ quy tắc, hở/cắt biên hoặc chồng nhóm được báo, không đăng ký bằng phỏng đoán.
 6. Tab Đã đăng ký: lọc loại, tầng và khung; xem vị trí nguồn, kích thước/bậu, trạng thái; định vị hoặc gỡ đăng ký giữ hình. Với tường có dầm khác mặc định, nhập Dầm riêng rồi Lưu dầm tường; để trống để kế thừa tầng.
@@ -38,15 +38,27 @@ Nội dung đích nằm trên layer quản lý khóa, block không cho explode. 
 
 Nếu có bản sao native dùng chung định nghĩa của nội dung liên kết ngoài quản lý, Arch cảnh báo trong danh sách, giữ hình và dừng đồng bộ bản liên quan để người dùng xử lý. Không tự xóa bản sao. Ngắt liên kết giữ hình; các nhóm không còn liên kết được trả về layer không khóa và ngừng nhận cập nhật.
 
-Hỗ trợ sao chép Line, Polyline, Arc, Circle, Ellipse, Solid, Text/MText, hatch và hình block lồng đã đánh giá; dimension được tách thành hình thể hiện. Entity chưa hỗ trợ được chặn ở bước kiểm tra, không tạo thiếu âm thầm. Chưa giữ liên kết kích thước native ở bản đích hoặc hỗ trợ đầy đủ đối tượng chuyên ngành/3D.
+Hỗ trợ sao chép Line, Polyline, Arc, Circle, Ellipse, Solid, Text/MText, hatch, Spline (giữ dữ liệu NURBS, control points, knots và weights) và hình block lồng đã đánh giá; dimension được tách thành hình thể hiện. Entity chưa hỗ trợ được chặn ở bước kiểm tra, không tạo thiếu âm thầm. Chưa giữ liên kết kích thước native ở bản đích hoặc hỗ trợ đầy đủ đối tượng chuyên ngành/3D.
 
 ## Lưu và nâng cấp
 
-Khung, profile, tầng, định nghĩa, đăng ký, bản vẽ và quan hệ nhóm nằm trong ARCH_SUITE_FRAMES_V1 schema 2. Cache và hình biểu diễn cũng nằm trong DWG; chuyển toàn bộ DWG đã lưu sang máy có Arch tương thích vẫn dùng tiếp được. COPYCLIP/WBLOCK một phần chưa có quy trình chuyển graph liên kết.
+Khung, profile, tầng, định nghĩa, đăng ký, bản vẽ và quan hệ nhóm nằm trong ARCH_SUITE_FRAMES_V1 schema 3. Cache và hình biểu diễn cũng nằm trong DWG; chuyển toàn bộ DWG đã lưu sang máy có Arch tương thích vẫn dùng tiếp được. COPYCLIP/WBLOCK một phần chưa có quy trình chuyển graph liên kết.
 
-Đọc được dữ liệu khung 0.4 schema 1. Các định nghĩa cửa cũ yêu cầu xác nhận lại Cửa đi/Cửa sổ; giữ ánh xạ cũ để chọn lại và lưu. Tầng cũ chỉ có tên cần bổ sung cao tầng/dầm. DWG đã ghi schema 2 cần phiên bản Arch tương thích; không dùng 0.4 để ghi lại dữ liệu mới.
+Đọc được dữ liệu khung schema 1 và 2. Khi tên tầng cũ chưa có trong danh mục, tạo mục chờ khai báo chiều cao với ID ổn định giữa các lần đọc. Các định nghĩa cửa cũ yêu cầu xác nhận lại Cửa đi/Cửa sổ; giữ ánh xạ cũ để chọn lại và lưu. Tầng cũ chỉ có tên cần bổ sung cao tầng/dầm. DWG đã ghi schema 3 cần Arch 0.6.0 hoặc phiên bản tương thích; không dùng bản cũ để ghi lại dữ liệu mới.
 
 Nhóm/tab dữ liệu 0.2 đã bỏ khỏi giao diện. Dữ liệu ARCH_SUITE_V1 không tự xóa hoặc chuyển đổi; tài nguyên đã lưu theo luồng trước được giữ khi mở. Cấu kiện nguồn/đăng ký mới không nhập vào mô hình hai Line cũ.
+
+## Xuất và nạp bộ định nghĩa
+
+Lưu định nghĩa trong DWG trước, vào tab Định nghĩa → Xuất cấu hình, chọn nhóm rồi lưu JSON. Có thể xuất tường, cửa đi/cửa sổ, nhóm layer, profile khung và khóa tài nguyên kho. Tầng là tùy chọn riêng, mặc định không xuất. Bộ JSON không chứa đối tượng đăng ký, handle, ID công trình, tọa độ hoặc graph liên kết; không thay thế việc gửi DWG đã lưu.
+
+Ở DWG tiếp theo, bấm Nạp cấu hình và duyệt bảng từng mục. Mục trùng mặc định giữ hiện có; tích mục cần thay. Mục thiếu layer/block/property được báo để kiểm tra; nếu nạp quy tắc thì vẫn phải bổ sung tài nguyên trước khi đăng ký. Mục lỗi hoặc khóa kho không còn hợp lệ không được áp dụng. Chỉ các mục đã tích được lưu vào DWG; không thay đổi cấu hình mặc định chung của kho. Khóa tài nguyên đã nạp được giữ trong DWG, chọn lại tại Thư viện rồi Áp dụng để Reader xác thực và nhập asset.
+
+## Lỗi sinh bản vẽ và định vị
+
+Bước chuẩn bị hình, tách block và sao chép dùng thực thể đã thuộc Database, tránh gọi API CAD phụ thuộc Database trên clone rời. Khi một nguồn không được hỗ trợ, thông báo có giai đoạn, loại, handle, layer, đường dẫn block lồng và vị trí gần đúng; bấm Đi tới nguồn báo lỗi để kiểm tra. Lỗi đầy đủ ghi tại `%LOCALAPPDATA%/ArchitecturalSuite/logs`. Nếu thao tác thất bại, giao dịch bị hủy thay vì giữ một bản vẽ sinh dở.
+
+Đi tới mục đã chọn zoom/highlight đúng đối tượng trong Model và giữ hướng nhìn/twist hiện hành, kể cả hướng isometric trực giao. Không tự đổi từ Layout sang Model; góc nhìn phối cảnh được báo chưa hỗ trợ. Với lỗi eNotInDatabase trên DWG người dùng đã báo, cần thử lại trên bản sao DWG đó; kiểm thử hiện tại dùng fixture tổng hợp, không khẳng định đã tái hiện mọi dữ liệu công trình.
 
 ## Phạm vi còn lại
 

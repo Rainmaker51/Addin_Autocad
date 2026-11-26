@@ -23,6 +23,8 @@ namespace Arch.Suite.Host
         private static bool changed;
         private static bool eventsRegistered;
         private static bool protecting;
+        private static string failureHandle;
+        private static Document failureDocument;
         public IReadOnlyList<CadRibbonPin> ManagedCommands => new[]
         {
             new CadRibbonPin { Command = "QAARCHOPEN", Label = "Architectural Suite" }
@@ -125,7 +127,7 @@ namespace Arch.Suite.Host
         }
         private static void Activated(object sender, DocumentCollectionEventArgs args)
         {
-            Observe(args.Document);
+            failureHandle=null;failureDocument=null;Observe(args.Document);
             panel?.ClearSelection();
             if (panel != null) panel.LegacyCandidates.ItemsSource = null;
             if (args.Document == null) return;
@@ -175,6 +177,7 @@ namespace Arch.Suite.Host
             var doc = App.DocumentManager.MdiActiveDocument;
             if (doc == null) { ShowResult("Mở DWG để tiếp tục."); return; }
             if (Convert.ToInt32(App.GetSystemVariable("CMDACTIVE")) != 0) { ShowResult("Kết thúc lệnh CAD hiện tại rồi thử lại."); return; }
+            if(key=="frame-link-preview"||key=="frame-link-create"||key=="frame-link-sync"){failureHandle=null;failureDocument=null;}
             pending = key; if (panel != null) panel.IsEnabled = false;
             try
             {
@@ -197,7 +200,13 @@ namespace Arch.Suite.Host
                         }
                     }
                     catch (OperationCanceledException) { ShowResult("Đã hủy thao tác."); }
-                    catch (System.Exception error) { var message=error is Rainmaker.Library.Reader.LibraryReadException libraryError?libraryError.Code+" · "+libraryError.Message:error.Message;ShowResult(message); doc.Editor.WriteMessage("\n" + message); }
+                    catch (System.Exception error)
+                    {
+                        if(error is SourceFailure sourceError){failureHandle=sourceError.SourceHandle;failureDocument=doc;}
+                        var message=error is Rainmaker.Library.Reader.LibraryReadException libraryError?libraryError.Code+" · "+libraryError.Message:error.Message;
+                        var log=SuiteDiagnostics.Write(doc,key,error);if(log!=null)message+="\nChi tiết: "+log;
+                        ShowResult(message);doc.Editor.WriteMessage("\n"+message);
+                    }
                     return Task.CompletedTask;
                 }, null);
             }
@@ -218,6 +227,22 @@ namespace Arch.Suite.Host
                     data.Save(doc.Database,tx);tx.Commit();Refresh(doc);
                     ShowResult("Đã gỡ đăng ký; hình nguồn được giữ nguyên. Save DWG để giữ thay đổi.");return;
                 }
+                if(key=="frame-config-export")
+                {
+                    var sections=DefinitionTransfer.ChooseExport();if(sections==null)throw new OperationCanceledException();
+                    var bundle=DefinitionTransfer.Export(data,Model.Load(tx,doc.Database),sections);
+                    var output=new Microsoft.Win32.SaveFileDialog{Title="Xuất bộ định nghĩa Arch",Filter="Arch JSON (*.json)|*.json",DefaultExt=".json",FileName="Arch_DinhNghia.json",OverwritePrompt=true};
+                    if(output.ShowDialog()!=true)throw new OperationCanceledException();DefinitionTransfer.Write(output.FileName,bundle);ShowResult("Đã xuất bộ định nghĩa: "+output.FileName);return;
+                }
+                if(key=="frame-config-import")
+                {
+                    var input=new Microsoft.Win32.OpenFileDialog{Title="Nạp bộ định nghĩa Arch",Filter="Arch JSON (*.json)|*.json",CheckFileExists=true};
+                    if(input.ShowDialog()!=true)throw new OperationCanceledException();
+                    var bundle=DefinitionTransfer.Read(input.FileName);var rows=DefinitionTransfer.Preview(doc.Database,tx,data,bundle);
+                    if(!DefinitionTransfer.ChooseImport(rows))throw new OperationCanceledException();
+                    var proposed=DefinitionTransfer.Apply(data,rows);proposed.Save(doc.Database,tx);tx.Commit();Refresh(doc);
+                    ShowResult("Đã nạp "+rows.Count(r=>r.Use)+" mục. Không sửa hình nguồn; kiểm tra/đăng ký lại khi cần. Save DWG để giữ cấu hình.");return;
+                }
                 if(key=="frame-group-layer")
                 {
                     var selected=doc.Editor.GetEntity("\nChọn đối tượng lấy layer chèn: ");if(selected.Status!=PromptStatus.OK)throw new OperationCanceledException();
@@ -235,21 +260,8 @@ namespace Arch.Suite.Host
                         var selected=panel.Floors.SelectedItem as FloorDefinition;if(selected==null)throw new InvalidOperationException("Chọn tầng cần bỏ.");
                         if(data.Frames.Any(f=>f.FloorId==selected.Id))throw new InvalidOperationException("Tầng đang được khung sử dụng.");floors.Remove(selected);panel.Floors.Items.Refresh();return;
                     }
-                    foreach(var floor in floors)floor.Validate();
-                    if(floors.Select(f=>f.Name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=floors.Count||floors.Select(f=>f.Id).Distinct().Count()!=floors.Count)throw new InvalidOperationException("Tên/ID tầng không được trùng.");
-                    var profileFloor=data.Profile==null?null:data.Floors.SingleOrDefault(f=>f.Name==data.Profile.Level);
-                    if(profileFloor!=null){var renamed=floors.SingleOrDefault(f=>f.Id==profileFloor.Id);if(renamed!=null)data.Profile.Level=renamed.Name;}
-                    data.Floors=floors;
-                    foreach(var frame in data.Frames)
-                    {
-                        var floor=floors.SingleOrDefault(f=>f.Id==frame.FloorId);if(floor==null)SuiteKinds.BindFloor(data,frame);else frame.Level=floor.Name;
-                    }
-                    foreach(var item in data.Registrations)
-                    {
-                        var frame=data.Frames.Single(f=>f.Id==item.FrameId);SuiteKinds.Stamp(item,data,frame);
-                        if(item.Kind=="Tường")item.Status="Cần đăng ký/cập nhật theo cấu hình tầng hiện tại";
-                    }
-                    data.Save(doc.Database,tx);tx.Commit();Refresh(doc);ShowResult("Đã lưu tầng. Lưu khung để gắn tầng; đăng ký/cập nhật lại tường và đồng bộ đích khi cần.");return;
+                    FloorCatalog.Apply(data,floors);
+                    data.Save(doc.Database,tx);tx.Commit();Refresh(doc);ShowResult("Đã lưu và đồng bộ tầng với khung. Tầng chưa có cao tầng/dầm được giữ ở trạng thái chờ; các phần chịu ảnh hưởng cần cập nhật.");return;
                 }
                 if(key=="frame-wall-beam")
                 {
@@ -469,32 +481,10 @@ namespace Arch.Suite.Host
                     ShowResult("Đã xuất danh mục từ cấu hình khung đã lưu.");
                     return;
                 }
-                if (key == "frame-locate" || key == "frame-registration-locate")
+                if(key=="frame-locate"||key=="frame-registration-locate"||key=="frame-error-locate")
                 {
-                    var selected = panel.Candidates.SelectedItem as FrameCandidate;
-                    string handle = key=="frame-registration-locate"?
-                        (panel.RegisteredSources.SelectedItem as SourceRegistration)?.Handle:selected?.Handle ?? panel.Draft?.Handle;
-                    if (string.IsNullOrEmpty(handle)) throw new InvalidOperationException("Chọn khung hoặc một dòng đối tượng.");
-                    var entity = Model.Resolve(tx, doc.Database, handle);
-                    if (entity == null) throw new InvalidOperationException("Đối tượng đã mất. Quét lại khung.");
-                    var extents = entity.GeometricExtents;
-                    var center = extents.MinPoint + (extents.MaxPoint - extents.MinPoint) * 0.5;
-                    using (var view = doc.Editor.GetCurrentView())
-                    {
-                        // Zoom under world plan view. Keep rotated/3D views intact and select the entity.
-                        if ((view.ViewDirection.GetNormal() - Autodesk.AutoCAD.Geometry.Vector3d.ZAxis).Length < 1e-8 &&
-                            Math.Abs(view.ViewTwist) < 1e-8)
-                        {
-                            view.Target = center; view.CenterPoint = Autodesk.AutoCAD.Geometry.Point2d.Origin;
-                            double ratio = view.Width / view.Height;
-                            view.Height = Math.Max(Math.Max(1, extents.MaxPoint.Y - extents.MinPoint.Y),
-                                Math.Max(1, extents.MaxPoint.X - extents.MinPoint.X) / ratio) * 1.4;
-                            view.Width = view.Height * ratio; doc.Editor.SetCurrentView(view);
-                        }
-                    }
-                    doc.Editor.SetImpliedSelection(new[] { entity.ObjectId });
-                    ShowResult("Đã chọn đối tượng #" + handle + ". Chỉnh vị trí rồi Quét trong khung.");
-                    return;
+                    string handle=key=="frame-error-locate"?(failureDocument==doc?failureHandle:null):key=="frame-registration-locate"?(panel.RegisteredSources.SelectedItem as SourceRegistration)?.Handle:(panel.Candidates.SelectedItem as FrameCandidate)?.Handle;
+                    ViewNavigation.Locate(doc,tx,handle);ShowResult("Đã zoom và chọn đối tượng nguồn #"+handle+". Giữ nguyên hướng nhìn.");return;
                 }
                 var draftFrame = panel.ReadDraft();
                 if (key == "frame-select")

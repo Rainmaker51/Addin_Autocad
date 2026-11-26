@@ -28,8 +28,8 @@ public class Suite050Smoke
             using(var tx=db.TransactionManager.StartTransaction())
             {
                 var data=FrameDocument.Load(db,tx);var frame=data.Frames.Single();
-                var floor=new FloorDefinition{Name="T1",HeightMm=3600,BeamMm=600};floor.Validate();
-                data.Floors.Add(floor);SuiteKinds.BindFloor(data,frame);data.WallRule.Confirmed=true;
+                var floor=FloorCatalog.Ensure(data,"T1");floor.HeightMm=3600;floor.BeamMm=600;floor.Validate();
+                SuiteKinds.BindFloor(data,frame);data.WallRule.Confirmed=true;
                 Check(frame.FloorId==floor.Id&&floor.WallHeightMm==3000,"Floor binding/calculation");
                 var snapshot=FrameReader.Read(db,tx,frame,true);
                 var wall=snapshot.Candidates.Single(c=>c.Status!="Cần xác nhận");
@@ -127,7 +127,7 @@ public class Suite050Smoke
             var db=App.DocumentManager.MdiActiveDocument.Database;
             using(var tx=db.TransactionManager.StartTransaction())
             {
-                var data=FrameDocument.Load(db,tx);Check(data.Schema==2&&data.Floors.Count==2&&data.Drawings.Count==1,"New model lost after copy/reopen");
+                var data=FrameDocument.Load(db,tx);Check(data.Schema==3&&data.Floors.Count==2&&data.Drawings.Count==1,"New model lost after copy/reopen");
                 Check(!DrawingLinks.Protect(db,tx,data),"Stable output changed on reopened DWG");
                 var cacheIds=new ObjectIdCollection(data.Drawings.SelectMany(d=>d.Groups).Where(g=>g.Linked).Select(g=>db.GetObjectId(false,new Handle(Convert.ToInt64(g.CacheHandle,16)),0)).ToArray());
                 db.Purge(cacheIds);Check(cacheIds.Count==0,"PURGE can remove approved cache definitions");
@@ -136,7 +136,7 @@ public class Suite050Smoke
                 Check(drawing.Groups.All(g=>!g.Linked)&&drawing.Groups.All(g=>Model.Resolve(tx,db,g.ContentHandle)!=null),"Full unlink lost geometry");
                 // Abort; leave saved linked fixture intact for UI regression.
             }
-            File.WriteAllText(Path.Combine(Root,"suite050-reopen.txt"),"PASS: schema2, floors, groups and links survive copy/reopen; protection stable; PURGE cannot remove approved caches; unlink preserves geometry.");
+            File.WriteAllText(Path.Combine(Root,"suite050-reopen.txt"),"PASS: schema3, floors, groups and links survive copy/reopen; protection stable; PURGE cannot remove approved caches; unlink preserves geometry.");
         }
         catch(System.Exception error){File.WriteAllText(Path.Combine(Root,"suite050-reopen.txt"),error.ToString());}
     }
@@ -208,10 +208,10 @@ public class Suite050Smoke
                 using(var buffer=new ResultBuffer(new TypedValue((int)DxfCode.Text,"{\"Schema\":1,\"Revision\":1,\"Frames\":[],\"DoorRules\":[{\"BlockName\":\"LEGACY_DOOR\",\"WidthProperty\":\"Width\",\"HeightMm\":2200}]}")))frames.Data=buffer;
                 var old=new Xrecord();nod.SetAt("ARCH_SUITE_V1",old);tx.AddNewlyCreatedDBObject(old,true);using(var buffer=new ResultBuffer(new TypedValue((int)DxfCode.Text,"unchanged legacy marker")))old.Data=buffer;
                 var data=FrameDocument.Load(db,tx);Check(data.DoorRules.Single().NeedsKindConfirmation,"0.4 door silently classified as door/window");
-                data.Save(db,tx);Check(FrameDocument.Load(db,tx).Schema==2,"Schema2 migration failed");
+                data.Save(db,tx);Check(FrameDocument.Load(db,tx).Schema==3,"Schema2 migration failed");
                 using(var buffer=old.Data)Check((string)buffer.AsArray()[0].Value=="unchanged legacy marker","0.2 data altered by migration");
             }
-            File.WriteAllText(Path.Combine(Root,"migration050.txt"),"PASS: loads schema1, flags old door types for explicit confirmation, writes schema2 and preserves legacy NOD data.");
+            File.WriteAllText(Path.Combine(Root,"migration050.txt"),"PASS: loads schema1, flags old door types for explicit confirmation, writes schema3 and preserves legacy NOD data.");
         }
         catch(System.Exception error){File.WriteAllText(Path.Combine(Root,"migration050.txt"),error.ToString());}
     }

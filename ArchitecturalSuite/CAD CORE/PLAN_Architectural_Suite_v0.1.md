@@ -11,6 +11,15 @@
 
 ---
 
+## Triển khai cập nhật 0.6.0 — 26/11/2026
+
+Phạm vi đã duyệt của đợt này: đồng bộ tầng của khung với danh mục; xuất/nạp bộ định nghĩa; hỗ trợ Spline khi sinh hình liên kết; xử lý đường sao chép gây eNotInDatabase và bổ sung log/định vị nguồn lỗi; sửa zoom tới mục đã chọn theo hệ tọa độ hướng nhìn.
+
+- Danh mục tầng là nguồn chung, khung/đăng ký liên kết bằng ID. Tầng cũ chỉ có tên được đưa vào danh mục chờ khai báo; chưa có chiều cao không được tính khối lượng. Cao xây vẫn bằng cao tầng trừ cao dầm; đổi chiều cao đánh dấu cần cập nhật.
+- JSON là cấu hình dùng lại giữa các hồ sơ, có chọn nhóm và bảng duyệt xung đột từng mục. Không xuất handle, đối tượng, ID công trình hoặc graph; không kéo dữ liệu nguồn của hồ sơ cũ vào hồ sơ mới. Tài nguyên kho chỉ lưu SourceId/Kind/Id và phải phân giải lại bằng Reader V1.
+- Bản đích giữ hình liên kết từ nguồn; Spline được sao chép với NURBS. Chuẩn bị hình trong Database trước khi tách/chuyển đổi; thao tác ghi nằm trong giao dịch có rollback. Lỗi được truy đến nguồn và có log đầy đủ.
+- Lưu DWG ở schema 3; đọc schema 1/2, giữ dữ liệu 0.2. Kiểm thử với AutoCAD 2021 trên fixture tổng hợp, gồm lưu/mở lại, hướng nhìn xoay, block lồng và Spline. Cần người dùng nghiệm thu lại DWG đã báo lỗi gốc. Không mở rộng đợt này sang ô chờ, cắt/nối tường, khối lượng hoặc sàn.
+
 ## Triển khai cập nhật 0.5.0 — 25/11/2026
 
 Người dùng đã duyệt bổ sung: layer block chỉ xét tại điểm chèn; cửa đi/cửa sổ chuyên biệt không vào nội thất; thiết bị vệ sinh ưu tiên hơn nội thất; gom nhóm quản lý không đóng block nguồn; cao xây = cao tầng − cao dầm, cho dầm riêng từng tường; cửa sổ có bậu theo loại; khung đích tên/mã riêng; bỏ menu 0.2 nhưng giữ dữ liệu; chỉ đưa nhóm chọn sang đích; đối tượng mới được quét/đăng ký rồi thuộc nhóm liên kết; Preview/Apply từng khung và di chuyển toàn khung qua Arch.

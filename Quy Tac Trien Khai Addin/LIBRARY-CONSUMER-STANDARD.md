@@ -1,11 +1,14 @@
-# Quy định add-in/skill sử dụng thư viện kho
+﻿# Quy định add-in/skill sử dụng thư viện kho
 
-Phiên bản 1.0 — 24/11/2026. Đối chiếu QA Library 1.8.1, Manager 0.9 và cách chọn tài nguyên của Axis trong repo. Đọc cùng [chuẩn Manager](ADDIN-MANAGER-STANDARD.md), [định danh](RESOURCE-IDENTIFIERS.md) và [quy trình phát triển](ADDIN-DEVELOPMENT-WORKFLOW.md).
+Phiên bản 1.2 — 25/11/2026. Bổ sung Reader 1.0.0, Manager 0.10.0 và Axis 1.9.0. Đọc cùng [giao thức Reader V1](LIBRARY-READER-PROTOCOL.md), [chuẩn Manager](ADDIN-MANAGER-STANDARD.md), [định danh](RESOURCE-IDENTIFIERS.md) và [quy trình phát triển](ADDIN-DEVELOPMENT-WORKFLOW.md).
+
+**Thay đổi từ QA 1.9:** chỉ thêm/sửa/xóa/thay cấu hình tài nguyên trên DWG nguồn; QA quản lý thông tin, quét, đối chiếu và trình bày/xuất danh mục. Các cơ chế xóa/gộp trực tiếp CAD của 1.8 bên dưới chỉ là ghi nhận lịch sử, không phải luồng giao diện hiện hành. Gộp danh mục chỉ được xác nhận sau khi hatch đã được sửa cho khớp trên CAD. Xem [hướng dẫn QA 1.9](QA-LIBRARY-1.9.md).
 
 Áp dụng bắt buộc khi viết add-in mới có dùng Block, Layer, Hatch, Text hoặc Dim của kho. Với add-in/skill cũ, đánh giá và chuyển đổi khi được giao; không sửa cấu hình đang dùng chỉ vì tài liệu được cập nhật. Nếu dự án khác chưa có cơ chế tương ứng, phải triển khai và kiểm thử adapter, không giả định Manager tự cung cấp.
 
 ## 1. Quyền quản lý và nguồn dữ liệu
 
+- Add-in mới đọc kho qua `Rainmaker.Library.Reader` V1 do Manager 0.10.0 cung cấp, không tự ghép file Template/Styles/Hatches/state/codes/metadata. Tham chiếu `Private=false`; không đóng gói bản Reader riêng. Reader là DLL hạ tầng không có Ribbon, không cần Host/QA đang mở. Cấu trúc storage đổi thì cập nhật adapter Reader/QA và giữ API/payload V1 cho consumer; xem tài liệu giao thức. Các add-in cũ chỉ chuyển khi được giao; Axis 1.9.0 đã được chuyển trong đợt này.
 - QA là công cụ chỉnh sửa thư viện: mẫu/định nghĩa trong DWG nguồn, danh mục, nhóm, thông tin quản lý, xóa và gộp tài nguyên. App và add-in/skill tiêu thụ đọc danh mục đã xuất hợp lệ. Việc sửa thư viện bằng lệnh CAD phải đi qua lưu nguồn và cập nhật kho tại QA.
 - Add-in tiêu thụ được ghi lựa chọn của chính nó và tạo/sửa đối tượng trong DWG công trình theo yêu cầu người dùng. Không sửa DWG thư viện nguồn, danh mục chung, sổ mã, nhóm, trạng thái duyệt, con trỏ version hoặc journal của QA.
 - Hình học hoặc block do add-in tự sinh theo thông số nghiệp vụ (ví dụ cột tự tạo của Axis) không mặc nhiên là tài nguyên thư viện. Chỉ đưa vào kho qua QA khi có yêu cầu; quy định liên kết áp dụng cho những tài nguyên thực sự lấy từ kho.

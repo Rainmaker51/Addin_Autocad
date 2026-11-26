@@ -56,7 +56,7 @@ namespace Arch.Suite.Host
         private Button saveFrames;
         private bool defining;
         private string activeSection;
-        internal readonly TextBox Level = new TextBox();
+        internal readonly ComboBox Level = new ComboBox{IsEditable=true,IsTextSearchEnabled=true};
         internal readonly TextBox WallLayer = new TextBox();
         internal readonly ComboBox BoundaryLayer = new ComboBox();
         internal readonly ComboBox FrameCodeTag=new ComboBox();
@@ -98,7 +98,7 @@ namespace Arch.Suite.Host
             topButtons.Children.Add(Button("Quét chọn khung", "frame-batch"));
             topButtons.Children.Add(Button("Đọc lại DWG", "frame-refresh"));
             SetColumn(topButtons, 1); heading.Children.Add(topButtons);
-            var title = new StackPanel(); title.Children.Add(Label("Architectural Suite 0.5.0", 18));
+            var title = new StackPanel(); title.Children.Add(Label("Architectural Suite 0.6.0", 18));
             document.TextTrimming=TextTrimming.CharacterEllipsis; document.TextWrapping=TextWrapping.NoWrap;
             title.Children.Add(document); heading.Children.Add(title); Children.Add(heading);
             var footer = new Grid { Margin = new Thickness(0, 5, 0, 0) };
@@ -137,10 +137,11 @@ namespace Arch.Suite.Host
             frame.Children.Add(Button("Lưu profile khung", "frame-profile"));
             frame.Children.Add(profileInfo);
             frame.Children.Add(Button("Áp tầng cho tập quét", "frame-batch-level"));
-            Level.TextChanged+=(s,e)=>{
-                if(!updating && SelectedSnapshot!=null && BatchFrames.Any(f=>f.Frame.Id==SelectedSnapshot.Frame.Id))
-                    SelectedSnapshot.Frame.Level=Level.Text.Trim();
-            };
+            Level.AddHandler(TextBoxBase.TextChangedEvent,new TextChangedEventHandler((s,e)=>{
+                if(!updating&&SelectedSnapshot!=null&&BatchFrames.Any(f=>f.Frame.Id==SelectedSnapshot.Frame.Id))SelectedSnapshot.Frame.Level=Level.Text.Trim();
+            }));
+            Level.LostKeyboardFocus+=(s,e)=>PreviewFloorChoice();
+            Level.SelectionChanged+=(s,e)=>{if(!updating&&Level.SelectedItem is string chosen)PreviewFloorChoice(chosen);};
             form.Children.Add(Group("Khung và phạm vi", frame, true));
             var scan = new StackPanel();
             scan.Children.Add(Label("Layer vùng tường")); scan.Children.Add(WallLayer);
@@ -187,7 +188,7 @@ namespace Arch.Suite.Host
             Frames.CellEditEnding+=(s,e)=>{
                 if(e.EditAction!=DataGridEditAction.Commit||!Equals(e.Column.Header,"Tầng"))return;
                 var row=e.Row.Item as FrameSnapshot;var editor=e.EditingElement as TextBox;
-                if(row!=null&&editor!=null&&row.Frame.Id==SelectedId)Level.Text=editor.Text;
+                if(row!=null&&editor!=null&&row.Frame.Id==SelectedId){Level.Text=editor.Text;PreviewFloorChoice(editor.Text);}
             };
             right.Children.Add(Frames);
             right.Children.Add(AtRow(summary, 1));
@@ -255,14 +256,16 @@ namespace Arch.Suite.Host
         private UIElement DefinitionForm()
         {
             var container=new Grid{Margin=new Thickness(8)};
+            container.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});container.RowDefinitions.Add(new RowDefinition());
+            var transfers=new WrapPanel();transfers.Children.Add(Button("Xuất cấu hình","frame-config-export"));transfers.Children.Add(Button("Nạp cấu hình","frame-config-import"));SetColumnSpan(transfers,2);container.Children.Add(transfers);
             container.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(140)});container.ColumnDefinitions.Add(new ColumnDefinition());
             var tree=new TreeView{Background=(Brush)Resources["ToolBackground"],Foreground=(Brush)Resources["ToolText"],BorderThickness=new Thickness(0),Margin=new Thickness(0,0,8,0)};
             tree.Items.Add(new TreeViewItem{Header="Tường",Tag="Tường",IsSelected=true,Foreground=(Brush)Resources["ToolText"]});
             var doors=new TreeViewItem{Header="Cửa",IsExpanded=true,Foreground=(Brush)Resources["ToolText"]};doors.Items.Add(new TreeViewItem{Header="Cửa đi",Tag="Cửa đi",Foreground=(Brush)Resources["ToolText"]});doors.Items.Add(new TreeViewItem{Header="Cửa sổ",Tag="Cửa sổ",Foreground=(Brush)Resources["ToolText"]});tree.Items.Add(doors);
             foreach(string kind in new[]{"Trục","Nội thất","Thiết bị vệ sinh"})tree.Items.Add(new TreeViewItem{Header=kind,Tag=kind,Foreground=(Brush)Resources["ToolText"]});
             tree.SelectedItemChanged+=(s,e)=>{var item=e.NewValue as TreeViewItem;if(item?.Tag is string kind)DefinitionMenu.SelectedItem=kind;};
-            container.Children.Add(tree);
-            var body=new StackPanel();var scroll=Scroll(body);SetColumn(scroll,1);container.Children.Add(scroll);
+            SetRow(tree,1);container.Children.Add(tree);
+            var body=new StackPanel();var scroll=Scroll(body);SetRow(scroll,1);SetColumn(scroll,1);container.Children.Add(scroll);
             Action show=()=>{
                 body.Children.Clear();doorSample=null;DoorBlock.Clear();
                 if(DefinitionKind=="Tường")
@@ -302,6 +305,7 @@ namespace Arch.Suite.Host
             Floors.IsReadOnly=false;
             foreach(var spec in new[]{new[]{"Tên tầng","Name"},new[]{"Cao độ sàn","ElevationMm"},new[]{"Cao tầng","HeightMm"},new[]{"Cao dầm","BeamMm"}})
                 Floors.Columns.Add(new DataGridTextColumn{Header=spec[0],Binding=new System.Windows.Data.Binding(spec[1]),Width=new DataGridLength(1,DataGridLengthUnitType.Star)});
+            Floors.Columns.Add(Column("Trạng thái","Status",2));
             Floors.Columns.Add(Column("Cao xây","WallHeightMm",1));panel.Children.Add(AtRow(Floors,1));
             var actions=new WrapPanel();actions.Children.Add(Button("Thêm tầng","frame-floor-add"));actions.Children.Add(Button("Lưu tầng","frame-floor-save",true));actions.Children.Add(Button("Bỏ tầng chưa dùng","frame-floor-remove"));panel.Children.Add(AtRow(actions,2));return panel;
         }
@@ -311,7 +315,7 @@ namespace Arch.Suite.Host
             form.Children.Add(Label("Chọn khung nguồn trong bảng trên để sinh; chọn dòng bản vẽ dưới để quản lý đích. Chỉ sao chép các cấu kiện đã đăng ký thuộc nhóm chọn. Hình đích không tính khối lượng."));
             form.Children.Add(Label("Tên bản vẽ đích khi sinh mới"));form.Children.Add(DrawingName);form.Children.Add(Label("Mã bản vẽ đích khi sinh mới"));form.Children.Add(DrawingCode);
             var kinds=new WrapPanel();foreach(var kind in SuiteKinds.All){var box=new CheckBox{Content=kind,Margin=new Thickness(6),IsChecked=kind=="Tường"};linkedKinds[kind]=box;kinds.Children.Add(box);}form.Children.Add(kinds);
-            var actions=new WrapPanel();foreach(var spec in new[]{new[]{"Xem trước","frame-link-preview"},new[]{"Sinh bản vẽ","frame-link-create"},new[]{"Đồng bộ / lưu lựa chọn","frame-link-sync"},new[]{"Di chuyển toàn khung","frame-link-move"},new[]{"Ngắt toàn bộ · giữ hình","frame-link-unlink"}})actions.Children.Add(Button(spec[0],spec[1]));form.Children.Add(actions);
+            var actions=new WrapPanel();actions.Children.Add(Button("Đi tới nguồn báo lỗi","frame-error-locate"));foreach(var spec in new[]{new[]{"Xem trước","frame-link-preview"},new[]{"Sinh bản vẽ","frame-link-create"},new[]{"Đồng bộ / lưu lựa chọn","frame-link-sync"},new[]{"Di chuyển toàn khung","frame-link-move"},new[]{"Ngắt toàn bộ · giữ hình","frame-link-unlink"}})actions.Children.Add(Button(spec[0],spec[1]));form.Children.Add(actions);
             LinkedDrawings.Height=180;LinkedDrawings.Columns.Add(Column("Tên","Name",2));LinkedDrawings.Columns.Add(Column("Mã","Code",1));LinkedDrawings.Columns.Add(Column("Khung nguồn","SourceName",2));LinkedDrawings.Columns.Add(Column("Tầng","Level",1));LinkedDrawings.Columns.Add(Column("Trạng thái","State",2));
             LinkedDrawings.SelectionChanged+=(s,e)=>{var selected=LinkedDrawings.SelectedItem as LinkedDrawing;if(selected==null)return;DrawingName.Text=selected.Name;DrawingCode.Text=selected.Code;foreach(var pair in linkedKinds)pair.Value.IsChecked=selected.Groups.Any(g=>g.Linked&&g.Kind==pair.Key);};form.Children.Add(LinkedDrawings);
             form.Children.Add(Label("Tên/mã khung đích chỉnh độc lập bằng ATT trên CAD. Các ô tên/mã phía trên dùng cho thao tác Sinh mới."));
@@ -342,6 +346,18 @@ namespace Arch.Suite.Host
             RegisteredSources.ItemsSource=registeredRows.Where(r=>(kind==null||kind=="Tất cả"||r.Kind==kind)&&(floor==null||floor=="Tất cả"||r.Level==floor)&&(frame==null||frame=="Tất cả"||r.FrameName==frame)).ToList();
         }
         internal void SetLibraryStatus(string value){libraryState.Text=value;}
+        private void SelectFloor(DrawingFrame frame)
+        {
+            var floor=currentDefinitions.Floors.FirstOrDefault(f=>f.Id==frame.FloorId)??currentDefinitions.Floors.FirstOrDefault(f=>string.Equals(f.Name,frame.Level?.Trim(),StringComparison.OrdinalIgnoreCase));
+            Floors.SelectedItem=floor;if(floor!=null&&Floors.IsLoaded)Floors.ScrollIntoView(floor);
+        }
+        private void PreviewFloorChoice(string chosen=null)
+        {
+            if(updating||string.IsNullOrWhiteSpace(chosen??Level.Text))return;
+            var floor=FloorCatalog.Ensure(currentDefinitions,chosen??Level.Text);
+            Floors.ItemsSource=currentDefinitions.Floors;Floors.Items.Refresh();Floors.SelectedItem=floor;
+            if(Floors.IsLoaded)Floors.ScrollIntoView(floor);
+        }
         internal void SetDefinitions(FrameDocument data)
         {
             if(SelectedSnapshot==null)WallLayer.Text=data.WallRule.Layer;
@@ -355,6 +371,8 @@ namespace Arch.Suite.Host
                 if(target!=null){drawing.Name=target.Title;drawing.Code=target.Code;}
             }
             currentDefinitions=data;Floors.ItemsSource=data.Floors;LinkedDrawings.ItemsSource=data.Drawings;
+            bool previous=updating;updating=true;string levelText=Level.Text;Level.ItemsSource=data.Floors.Select(f=>f.Name).ToList();Level.Text=levelText;updating=previous;
+            if(SelectedSnapshot!=null)SelectFloor(SelectedSnapshot.Frame);
             storedDoorRules=data.DoorRules;
             doorRuleTable.ItemsSource=data.DoorRules.Where(d=>d.Kind==DefinitionKind||d.NeedsKindConfirmation).ToList();
             if(data.Profile!=null)profileInfo.Text="Profile: "+data.Profile.BlockName+" · "+data.Profile.BoundaryLayer;
@@ -435,6 +453,7 @@ namespace Arch.Suite.Host
         }
         internal void SelectSnapshot(FrameSnapshot snapshot)
         {
+            bool previousUpdate=updating;updating=true;
             SelectedSnapshot = snapshot; SelectedId = snapshot.Frame.Id;
             Draft = JsonConvert.DeserializeObject<DrawingFrame>(JsonConvert.SerializeObject(snapshot.Frame));
             Level.Text = Draft.Level ?? "";
@@ -450,6 +469,7 @@ namespace Arch.Suite.Host
             Candidates.ItemsSource = snapshot.Candidates;
             Preview.Show(snapshot);
             summary.Text = snapshot.Frame.BlockName + " · " + snapshot.Status + " · " + snapshot.Candidates.Count + " đối tượng";
+            updating=previousUpdate;SelectFloor(snapshot.Frame);
         }
         internal DrawingFrame ReadDraft()
         {
@@ -503,7 +523,7 @@ namespace Arch.Suite.Host
             storedDoorRules=new List<DoorDefinition>();RegisteredSources.ItemsSource=null;
             DraftColumns = new List<FrameColumn>();
             Attributes.ItemsSource = null; Candidates.ItemsSource = null;
-            Level.Clear(); BoundaryLayer.ItemsSource = null; BoundaryLayer.Text = "";
+            Level.Text="";Level.ItemsSource=null; BoundaryLayer.ItemsSource = null; BoundaryLayer.Text = "";
             NameTag.ItemsSource = null;FrameCodeTag.ItemsSource=null; Preview.Show(null); summary.Text = "Chọn block khung trên CAD để bắt đầu.";
         }
         private void FontResources()

@@ -166,6 +166,10 @@ public class FrameSmoke
             {
                 var panel = new SuitePanel(key => { });
                 panel.SetData("Mặt bằng thử.dwg", snapshots, model);panel.SetDefinitions(definitions);panel.SetRegistered(definitions,snapshots);
+                Demand(panel.Floors.Items.Count==definitions.Floors.Count,"Floor catalogue missing");
+                Demand((panel.Floors.SelectedItem as FloorDefinition)?.Id==snapshots[0].Frame.FloorId,"Selected frame did not select canonical floor");
+                var extraFloor=new FloorDefinition{Name="UI-T2",HeightMm=4200,BeamMm=500};definitions.Floors.Add(extraFloor);panel.SetDefinitions(definitions);panel.Level.SelectedItem="UI-T2";
+                Demand((panel.Floors.SelectedItem as FloorDefinition)?.Id==extraFloor.Id,"Floor dropdown did not select matching catalogue row");panel.Level.SelectedItem=snapshots[0].Frame.Level;
                 Demand((string)panel.BoundaryLayer.SelectedItem == "QA_KH_Quet", "Boundary choice missing after reload");
                 Demand(panel.ReadDraft().BoundaryLayer == "QA_KH_Quet", "Boundary choice not saved");
                 panel.Attributes.SelectedItem = panel.DraftColumns[1];
@@ -210,7 +214,16 @@ public class FrameSmoke
                     details.SelectedItem=details.Items.OfType<System.Windows.Controls.TabItem>().Single(i=>Equals(i.Header,name));
                     capture(name=="Tầng"?"floors-ui":name=="Đã đăng ký"?"registered-ui":"links-ui");
                 }
-                File.WriteAllText(Path.Combine(root, "frame-ui.txt"), "PASS: WPF theme and compact layout at 1240x760 / 800x580; definition form; contextual primary button and header/footer client padding.");
+                Demand(Find<System.Windows.Controls.Button>(panel).Any(b=>Equals(b.Content,"Nạp cấu hình"))||details.Items.OfType<System.Windows.Controls.TabItem>().Any(i=>Equals(i.Header,"Định nghĩa")),"Definition transfer navigation missing");
+                {
+                    var rows=new System.Collections.Generic.List<DefinitionImportRow>{new DefinitionImportRow{Use=false,Section="Tường",Key="QA_KT_Tuong",State="Trùng · giữ hiện có"},new DefinitionImportRow{Use=true,Section="Nhóm layer",Key="Nội thất",State="Hợp lệ"},new DefinitionImportRow{Section="Cửa",Key="D1",State="Cần kiểm tra nguồn",Detail="Thiếu block mẫu; chỉ nạp quy tắc"}};
+                    var dialog=DefinitionTransfer.ImportWindow(rows);dialog.Resources=panel.Resources;dialog.Foreground=(Brush)panel.Resources["ToolText"];
+                    var content=(System.Windows.Controls.Grid)dialog.Content;content.Background=(Brush)panel.Resources["ToolBackground"];
+                    var dialogSize=new Size(1000,520);content.Measure(dialogSize);content.Arrange(new Rect(dialogSize));content.UpdateLayout();
+                    System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Background,new Action(()=>{}));content.UpdateLayout();
+                    var png=new RenderTargetBitmap(1000,520,96,96,PixelFormats.Pbgra32);png.Render(content);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(png));using(var stream=File.Create(Path.Combine(root,"import-preview-ui.png")))encoder.Save(stream);
+                }
+                File.WriteAllText(Path.Combine(root, "frame-ui.txt"), "PASS: WPF 1240x760 / 800x580; canonical floor selection and dropdown sync; definition/import review form; contextual primary button and client padding.");
             }
             catch (System.Exception error) { failure = error; }
         });

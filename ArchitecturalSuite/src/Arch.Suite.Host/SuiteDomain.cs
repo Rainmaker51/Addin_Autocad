@@ -6,14 +6,19 @@ using Newtonsoft.Json;
 
 namespace Arch.Suite.Host
 {
-    internal sealed class FloorDefinition
+    internal sealed class FloorDefinition : System.ComponentModel.INotifyPropertyChanged
     {
         public string Id {get;set;}=Guid.NewGuid().ToString("N");
-        public string Name {get;set;}
-        public double ElevationMm {get;set;}
-        public double HeightMm {get;set;}
-        public double BeamMm {get;set;}
-        public double WallHeightMm=>HeightMm-BeamMm;
+        private string name;private double elevation,height,beam;
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+        private void Changed(string property){PropertyChanged?.Invoke(this,new System.ComponentModel.PropertyChangedEventArgs(property));PropertyChanged?.Invoke(this,new System.ComponentModel.PropertyChangedEventArgs("WallHeightMm"));PropertyChanged?.Invoke(this,new System.ComponentModel.PropertyChangedEventArgs("Status"));PropertyChanged?.Invoke(this,new System.ComponentModel.PropertyChangedEventArgs("IsConfigured"));}
+        public string Name {get=>name;set{if(name==value)return;name=value;Changed("Name");}}
+        public double ElevationMm {get=>elevation;set{if(elevation==value)return;elevation=value;Changed("ElevationMm");}}
+        public double HeightMm {get=>height;set{if(height==value)return;height=value;Changed("HeightMm");}}
+        public double BeamMm {get=>beam;set{if(beam==value)return;beam=value;Changed("BeamMm");}}
+        [JsonIgnore] public bool IsConfigured=>HeightMm>0&&BeamMm>=0&&BeamMm<HeightMm&&!double.IsNaN(HeightMm)&&!double.IsInfinity(HeightMm)&&!double.IsNaN(BeamMm)&&!double.IsInfinity(BeamMm);
+        [JsonIgnore] public string Status=>IsConfigured?"Đã khai báo":"Chưa khai báo chiều cao";
+        public double WallHeightMm=>IsConfigured?HeightMm-BeamMm:0;
         internal void Validate()
         {
             if(string.IsNullOrWhiteSpace(Name)||!Finite(HeightMm)||!Finite(BeamMm)||!Finite(ElevationMm)||HeightMm<=0||BeamMm<0||BeamMm>=HeightMm)
@@ -51,8 +56,7 @@ namespace Arch.Suite.Host
         }
         internal static void BindFloor(FrameDocument data,DrawingFrame frame)
         {
-            var floor=data.Floors.SingleOrDefault(f=>string.Equals(f.Name,frame.Level,StringComparison.OrdinalIgnoreCase));
-            frame.FloorId=floor?.Id;
+            FloorCatalog.Assign(data,frame,frame.Level);
         }
         internal static void Stamp(SourceRegistration source,FrameDocument data,DrawingFrame frame)
         {

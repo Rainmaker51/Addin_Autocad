@@ -16,7 +16,8 @@ namespace Arch.Suite.Host
         [Newtonsoft.Json.JsonIgnore] public string SourceName {get;set;}
         [Newtonsoft.Json.JsonIgnore] public string Level {get;set;}
         [Newtonsoft.Json.JsonIgnore] public int UnmanagedCopiesCount {get;set;}
-        [Newtonsoft.Json.JsonIgnore] public string State=>UnmanagedCopiesCount>0?UnmanagedCopiesCount+" bản sao cần kiểm tra":Groups.Count(g=>g.Linked)+" liên kết · "+Groups.Count(g=>!g.Linked)+" độc lập";
+        [Newtonsoft.Json.JsonIgnore] public string State=>UnmanagedCopiesCount>0?UnmanagedCopiesCount+" bản sao cần kiểm tra":(NeedsUpdate?"Cần cập nhật · ":"")+Groups.Count(g=>g.Linked)+" liên kết · "+Groups.Count(g=>!g.Linked)+" độc lập";
+        public bool NeedsUpdate {get;set;}
         public string SourceFrameId {get;set;}
         public string TargetFrameId {get;set;}
         public double[] TargetPoint {get;set;}
@@ -50,12 +51,14 @@ namespace Arch.Suite.Host
             if(value is double d)return Number(d);
             return Convert.ToString(value,CultureInfo.InvariantCulture);
         }
-        private static string Signature(Entity entity)
+        internal static string Signature(Entity entity)
         {
             var text=new StringBuilder(entity.GetType().FullName);
             foreach(var property in entity.GetType().GetProperties(BindingFlags.Instance|BindingFlags.Public).OrderBy(p=>p.Name))
             {
                 if(property.GetIndexParameters().Length>0)continue;
+                if(entity is Spline&&!new[]{"Layer","Linetype","LinetypeScale","LineWeight","ColorIndex","Visible","Material","PlotStyleName","Annotative","Normal"}.Contains(property.Name))continue;
+                if(entity is Spline splineWithoutFit&&!splineWithoutFit.HasFitData&&new[]{"NumFitPoints","StartFitTangent","EndFitTangent","FitTolerance"}.Contains(property.Name))continue;
                 var type=property.PropertyType;
                 if(!(type.IsPrimitive||type.IsEnum||type==typeof(string)||type==typeof(Point3d)||type==typeof(Point2d)||type==typeof(Vector3d)))continue;
                 if(new[]{"UnmanagedObject","BlockName","IsModified","IsModifiedXData","IsModifiedGraphics","IsNewObject","IsWriteEnabled","IsReadEnabled","IsNotifyEnabled","IsTransactionResident","IsPersistent","IsCancelling","IsReallyClosing","IsErased","IsEffectivelyErased","IsDisposed","IsUndoing","IsAProxy","IsNotifying"}.Contains(property.Name))continue;
@@ -63,6 +66,13 @@ namespace Arch.Suite.Host
             }
             text.Append('|').Append(entity.Color.Red).Append(',').Append(entity.Color.Green).Append(',').Append(entity.Color.Blue);
             if(entity is Polyline poly)for(int i=0;i<poly.NumberOfVertices;i++)text.Append('|').Append(Value(poly.GetPoint3dAt(i))).Append(':').Append(Number(poly.GetBulgeAt(i))).Append(':').Append(Number(poly.GetStartWidthAt(i))).Append(':').Append(Number(poly.GetEndWidthAt(i)));
+            if(entity is Spline spline)
+            {
+                var nurbs=spline.NurbsData;text.Append("|NURBS:").Append(nurbs.Degree).Append(':').Append(nurbs.Closed).Append(':').Append(nurbs.Periodic).Append(':').Append(nurbs.Rational);
+                foreach(Point3d point in nurbs.GetControlPoints())text.Append('|').Append(Value(point));
+                foreach(double knot in nurbs.GetKnots())text.Append("|k:").Append(Number(knot));
+                foreach(double weight in nurbs.GetWeights())text.Append("|w:").Append(Number(weight));
+            }
             if(entity is Solid solid)for(int i=0;i<4;i++)text.Append(Value(solid.GetPointAt((short)i)));
             if(entity is Hatch hatch)
             {
@@ -76,47 +86,17 @@ namespace Arch.Suite.Host
             // Unsupported entities are rejected before generation rather than hashed by bounds alone.
             return text.ToString();
         }
-        private static bool Supported(Entity entity)=>entity is Line||entity is Polyline||entity is Circle||entity is Arc||entity is DBText||entity is MText||entity is Ellipse||entity is Solid||entity is Hatch;
-        private static DBText AttributeText(DBText text)=>new DBText{TextString=text.TextString,Height=text.Height,Position=text.Position,Rotation=text.Rotation,TextStyleId=text.TextStyleId,LayerId=text.LayerId,Color=text.Color,WidthFactor=text.WidthFactor,Oblique=text.Oblique};
-        private static void Leaves(Entity entity,List<Entity> leaves,int depth=0)
-        {
-            if(depth>24)throw new InvalidOperationException("Block lồng quá sâu.");
-            if(entity is AttributeDefinition definition)
-            {
-                if(definition.Constant&&!definition.Invisible)leaves.Add(AttributeText(definition));return;
-            }
-            if(entity is BlockReference block)
-            {
-                if(block.Database!=null)
-                {
-                    var tx=block.Database.TransactionManager.TopTransaction;
-                    foreach(ObjectId id in block.AttributeCollection)
-                    {var att=(AttributeReference)tx.GetObject(id,OpenMode.ForRead);if(!att.Invisible)leaves.Add(AttributeText(att));}
-                }
-                var collection=new DBObjectCollection();
-                try{block.Explode(collection);foreach(DBObject item in collection){if(item is Entity child)Leaves(child,leaves,depth+1);}}
-                finally{foreach(DBObject item in collection)item.Dispose();collection.Dispose();}
-                return;
-            }
-            if(entity is Dimension)
-            {
-                var collection=new DBObjectCollection();
-                try{entity.Explode(collection);foreach(DBObject item in collection)if(item is Entity child)Leaves(child,leaves,depth+1);}
-                finally{foreach(DBObject item in collection)item.Dispose();collection.Dispose();}
-                return;
-            }
-            if(!Supported(entity))throw new InvalidOperationException("Chưa hỗ trợ sao chép có bảo vệ: "+entity.GetType().Name+". Chưa tạo/cập nhật bản vẽ.");
-            var copied=(Entity)entity.Clone();if(copied is Hatch clonedHatch)clonedHatch.Associative=false;leaves.Add(copied);
-        }
-        private static string SourceHash(Database db,Transaction tx,FrameDocument data,DrawingFrame frame,string kind,IEnumerable<Entity> leaves)
+        internal static bool Supported(Entity entity)=>entity is Line||entity is Polyline||entity is Circle||entity is Arc||entity is DBText||entity is MText||entity is Ellipse||entity is Solid||entity is Hatch||entity is Spline;
+        private static string SourceHash(Database db,Transaction tx,FrameDocument data,DrawingFrame frame,string kind,GeometryBatch leaves)
         {
             var metadata=string.Join("|",SuiteKinds.Refresh(db,tx,data,frame).Where(r=>r.Kind==kind).OrderBy(r=>r.Id).Select(r=>r.Id+":"+r.Code+":"+Number(r.HeightMm)+":"+Number(r.WidthMm)+":"+Number(r.SillMm)+":"+Number(r.ElevationMm)+":"+r.FloorId));
-            using(var sha=SHA256.Create())return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(Hash(leaves)+metadata))).Replace("-","").ToLowerInvariant();
+            using(var sha=SHA256.Create())return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(leaves.Fingerprint+metadata))).Replace("-","").ToLowerInvariant();
         }
-        private static string Hash(IEnumerable<Entity> entities)
+        internal static string HashSignatures(IEnumerable<string> signatures)
         {
-            using(var sha=SHA256.Create())return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n",entities.Select(Signature))))).Replace("-","").ToLowerInvariant();
+            using(var sha=SHA256.Create())return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n",signatures)))).Replace("-","").ToLowerInvariant();
         }
+        internal static string Hash(IEnumerable<Entity> entities)=>HashSignatures(entities.Select(Signature));
         private static BlockTableRecord Record(Database db,Transaction tx,string handle,OpenMode mode=OpenMode.ForRead)
         {
             if(!db.TryGetObjectId(new Handle(Convert.ToInt64(handle,16)),out var id)||id.IsErased)throw new InvalidOperationException("Thiếu dữ liệu hình liên kết. Chọn đồng bộ để dựng lại.");
@@ -145,16 +125,10 @@ namespace Arch.Suite.Host
             var source=drawing==null?selected:data.Frames.SingleOrDefault(f=>f.Id==drawing.SourceFrameId);
             if(source==null||source.IsDerived)throw new InvalidOperationException("Khung nguồn không còn hợp lệ.");return source;
         }
-        private static List<Entity> Build(Database db,Transaction tx,FrameDocument data,DrawingFrame source,string kind)
+        private static GeometryBatch Build(Database db,Transaction tx,FrameDocument data,DrawingFrame source,string kind)
         {
             var registered=SuiteKinds.Refresh(db,tx,data,source).Where(r=>r.Kind==kind).OrderBy(r=>r.Id).ToList();
-            var leaves=new List<Entity>();
-            try
-            {
-                foreach(var item in registered)Leaves(Model.Resolve(tx,db,item.Handle),leaves);
-                return leaves;
-            }
-            catch{foreach(var leaf in leaves)leaf.Dispose();throw;}
+            return GeometryBatch.Build(db,registered,kind);
         }
         internal static void CheckCopies(Database db,Transaction tx,FrameDocument data)
         {
@@ -183,14 +157,15 @@ namespace Arch.Suite.Host
                     var prior=drawing?.Groups.SingleOrDefault(g=>g.Kind==kind&&g.Linked);
                     notes.Add(kind+": "+leaves.Count+" nét · "+(prior==null?"Tạo":prior.SourceHash==SourceHash(db,tx,data,source,kind,leaves)?"Không đổi":"Cần cập nhật"));
                 }
-                finally{foreach(var leaf in leaves)leaf.Dispose();}
+                finally{leaves.Dispose();}
             }
             return string.Join("\n",notes);
         }
         private static void Fill(Transaction tx,BlockTableRecord record,IEnumerable<Entity> entities)
         {
             foreach(var old in Contents(tx,record)){old.UpgradeOpen();old.Erase();}
-            foreach(var entity in entities)Append(tx,record,(Entity)entity.Clone());
+            var ids=entities.Select(e=>e.ObjectId).ToArray();
+            if(ids.Length>0)record.Database.DeepCloneObjects(new ObjectIdCollection(ids),record.ObjectId,new IdMapping(),false);
         }
         private static void ApplyGroup(Database db,Transaction tx,FrameDocument data,LinkedDrawing drawing,DrawingFrame source,string kind)
         {
@@ -208,7 +183,7 @@ namespace Arch.Suite.Host
                 }
                 Layer(db,tx,group.Layer,false);
                 var cache=Record(db,tx,group.CacheHandle,OpenMode.ForWrite);var content=Record(db,tx,group.ContentDefinitionHandle,OpenMode.ForWrite);
-                Fill(tx,cache,leaves);Fill(tx,content,Contents(tx,cache));
+                Fill(tx,cache,leaves.Entities);Fill(tx,content,Contents(tx,cache));
                 group.SourceHash=SourceHash(db,tx,data,source,kind,leaves);group.ContentHash=Hash(Contents(tx,content));
                 var sourceBlock=FrameReader.Resolve(db,tx,source.Handle);
                 var target=new Point3d(drawing.TargetPoint[0],drawing.TargetPoint[1],drawing.TargetPoint[2]);
@@ -223,7 +198,7 @@ namespace Arch.Suite.Host
                 else{reference.UpgradeOpen();reference.Position=new Point3d(delta.X,delta.Y,delta.Z);reference.ScaleFactors=new Scale3d(1);reference.Rotation=0;reference.BlockTableRecord=content.ObjectId;}
                 Layer(db,tx,group.Layer,true);
             }
-            finally{foreach(var leaf in leaves)leaf.Dispose();}
+            finally{leaves.Dispose();}
         }
         internal static LinkedDrawing Create(Database db,Transaction tx,FrameDocument data,DrawingFrame source,string name,string code,Point3d target,IEnumerable<string> kinds)
         {
@@ -242,13 +217,19 @@ namespace Arch.Suite.Host
                 if(proposed.Min(q=>q.X)<bounds.Boundary.Max(q=>q.X)&&proposed.Max(q=>q.X)>bounds.Boundary.Min(q=>q.X)&&proposed.Min(q=>q.Y)<bounds.Boundary.Max(q=>q.Y)&&proposed.Max(q=>q.Y)>bounds.Boundary.Min(q=>q.Y))throw new InvalidOperationException("Vị trí khung mới chồng phạm vi khung đã đăng ký. Chọn vùng trống khác.");
             }
             if(string.IsNullOrWhiteSpace(source.CodeTag)||source.CodeTag==source.NameTag||!sourceSnapshot.Attributes.ContainsKey(source.CodeTag))throw new InvalidOperationException("Chọn tag mã bản vẽ riêng, khác tag tên rồi Lưu khung trước khi sinh.");
-            var mapping=new IdMapping();db.DeepCloneObjects(new ObjectIdCollection{original.ObjectId},SymbolUtilityServices.GetBlockModelSpaceId(db),mapping,false);
-            var copy=(BlockReference)tx.GetObject(mapping[original.ObjectId].Value,OpenMode.ForWrite);
             var privateDefinition=NewRecord(db,tx,"ARCH_FRAME_"+Guid.NewGuid().ToString("N"));
             var originalDefinition=(BlockTableRecord)tx.GetObject(original.BlockTableRecord,OpenMode.ForRead);
-            db.DeepCloneObjects(new ObjectIdCollection(originalDefinition.Cast<ObjectId>().ToArray()),privateDefinition.ObjectId,new IdMapping(),false);
-            copy.BlockTableRecord=privateDefinition.ObjectId;
-            var shift=Matrix3d.Displacement(target-original.Position);copy.TransformBy(shift);
+            try{db.DeepCloneObjects(new ObjectIdCollection(originalDefinition.Cast<ObjectId>().ToArray()),privateDefinition.ObjectId,new IdMapping(),false);}
+            catch(Exception error){throw new SourceFailure("Sao chép định nghĩa khung","Khung",original,source.BlockName,error);}
+            var copy=new BlockReference(target,privateDefinition.ObjectId);
+            Append(tx,(BlockTableRecord)tx.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(db),OpenMode.ForWrite),copy);
+            copy.SetPropertiesFrom(original);copy.Normal=original.Normal;copy.ScaleFactors=original.ScaleFactors;copy.Rotation=original.Rotation;
+            var shift=Matrix3d.Displacement(target-original.Position);
+            foreach(ObjectId id in original.AttributeCollection)
+            {
+                var attribute=(AttributeReference)((AttributeReference)tx.GetObject(id,OpenMode.ForRead)).Clone();
+                copy.AttributeCollection.AppendAttribute(attribute);tx.AddNewlyCreatedDBObject(attribute,true);attribute.TransformBy(shift);
+            }
             foreach(ObjectId id in copy.AttributeCollection)
             {
                 var attribute=(AttributeReference)tx.GetObject(id,OpenMode.ForWrite);
@@ -279,6 +260,7 @@ namespace Arch.Suite.Host
             foreach(var kind in selected)ApplyGroup(db,tx,data,drawing,source,kind);
             data.Registrations.RemoveAll(r=>r.FrameId==source.Id&&Model.Resolve(tx,db,r.Handle)==null);
             foreach(var sourceItem in SuiteKinds.Refresh(db,tx,data,source))RegistrationService.Upsert(data,sourceItem);
+            drawing.NeedsUpdate=false;
         }
         private static void Detach(Database db,Transaction tx,LinkedGroup group)
         {
